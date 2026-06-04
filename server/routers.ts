@@ -37,8 +37,8 @@ function mapearDuimpAPIParaGLME(data: Record<string, unknown>): DuimpParsedData 
   const itens = (Array.isArray(data.itens) ? data.itens : []) as Record<string, unknown>[];
   const adicoes = itens.map((item, idx) => ({
     numero: String(idx + 1),
-    ncm: get(item, "ncm", "codigoNcm"),
-    descricao: get(item, "descricao", "descricaoMercadoria"),
+    ncm: get(item, "ncm", "codigoNcm") ?? "",
+    descricao: get(item, "descricao", "descricaoMercadoria") ?? "",
     quantidade: get(item, "quantidade", "quantidadeEstatistica"),
     valorFOB: get(item, "valorFob", "valorFOB"),
     baseCalculo: get(item, "baseCalculoII", "baseCalculo"),

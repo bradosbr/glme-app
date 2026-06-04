@@ -105,7 +105,7 @@ function extrairMultiLinha(texto: string, label: string, maxLinhas = 2): string 
   const idx = texto.indexOf(label);
   if (idx === -1) return undefined;
 
-  const depois = texto.substring(idx + label.length).replace(/^[\s:●]*/u, "");
+  const depois = texto.substring(idx + label.length).replace(/^[\s:●]*/, "");
   const linhas = depois.split("\n").map(l => l.trim()).filter(l => l);
 
   // Labels que indicam início de novo campo — parar ao encontrá-los

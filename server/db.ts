@@ -62,8 +62,16 @@ export async function getImportadorByCnpj(cnpj: string) {
   const db = await getDb();
   if (!db) return undefined;
   const cnpjClean = cnpj.replace(/\D/g, '');
+  // Formatar para XX.XXX.XXX/XXXX-XX (padrão armazenado no banco)
+  const cnpjFormatado = cnpjClean.length === 14
+    ? cnpjClean.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')
+    : '';
   const result = await db.select().from(importadores)
-    .where(or(eq(importadores.cnpj, cnpj), eq(importadores.cnpj, cnpjClean)))
+    .where(or(
+      eq(importadores.cnpj, cnpj),
+      eq(importadores.cnpj, cnpjClean),
+      ...(cnpjFormatado ? [eq(importadores.cnpj, cnpjFormatado)] : [])
+    ))
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
 }

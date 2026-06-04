@@ -108,69 +108,93 @@ export default function Home() {
   const duimpFileInputRef = useRef<HTMLInputElement>(null);
 
   const parsearDuimpPDFMutation = trpc.duimp.parsearPDF.useMutation({
-    onSuccess: (result: any) => {
+    onSuccess: async (result: any) => {
       if (!result.sucesso || !result.dados) {
         toast.error(result.erro || "Erro ao processar PDF da DUIMP.");
         return;
       }
-      preencherFormularioDuimp(result.dados);
+      await preencherFormularioDuimp(result.dados);
     },
     onError: (e: any) => toast.error(`Erro ao processar PDF: ${e.message}`),
   });
 
   const consultarDuimpAPIMutation = trpc.duimp.consultarAPI.useMutation({
-    onSuccess: (result: any) => {
+    onSuccess: async (result: any) => {
       if (!result.sucesso || !result.dados) {
         toast.error(result.erro || "Erro ao consultar DUIMP na API.");
         return;
       }
-      preencherFormularioDuimp(result.dados);
+      await preencherFormularioDuimp(result.dados);
     },
     onError: (e: any) => toast.error(`Erro na API: ${e.message}`),
   });
 
-  const preencherFormularioDuimp = (dados: any) => {
+  const preencherFormularioDuimp = async (dados: any) => {
     let preenchidos = 0;
 
-    // === IMPORTADOR ===
-    if (dados.importadorNome) { updateImportador("nome", dados.importadorNome); preenchidos++; }
-    if (dados.importadorCnpj) { updateImportador("cnpj", dados.importadorCnpj); preenchidos++; }
-    if (dados.importadorEndereco) { updateImportador("endereco", dados.importadorEndereco); preenchidos++; }
-    if (dados.importadorBairro) { updateImportador("bairro", dados.importadorBairro); preenchidos++; }
-    if (dados.importadorCep) { updateImportador("cep", dados.importadorCep); preenchidos++; }
-    if (dados.importadorMunicipio) { updateImportador("municipio", dados.importadorMunicipio); preenchidos++; }
-    if (dados.importadorUf) { updateImportador("uf", dados.importadorUf); preenchidos++; }
+    // === IMPORTADOR: 1º cadastro interno → 2º dados do PDF ===
+    const cnpjRaw = dados.importadorCnpj?.replace(/\D/g, "");
+    let usouCadastroInterno = false;
+    if (cnpjRaw && cnpjRaw.length === 14) {
+      setCnpjBusca(cnpjRaw);
+      try {
+        const respInterno = await fetch(`/api/trpc/importadores.buscarPorCNPJ?batch=1&input=${encodeURIComponent(JSON.stringify({ "0": { json: { cnpj: cnpjRaw } } }))}`, { credentials: "include" });
+        const jsonInterno = await respInterno.json();
+        const interno = jsonInterno?.[0]?.result?.data?.json ?? jsonInterno?.[0]?.result?.data ?? jsonInterno?.result?.data;
+        if (interno?.razaoSocial) {
+          updateImportador("nome", interno.razaoSocial);
+          updateImportador("cnpj", cnpjRaw.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5"));
+          if (interno.inscricaoEstadual) updateImportador("inscricaoEstadual", interno.inscricaoEstadual);
+          if (interno.cnae) updateImportador("cnae", interno.cnae);
+          if (interno.endereco) updateImportador("endereco", interno.endereco);
+          if (interno.bairro) updateImportador("bairro", interno.bairro);
+          if (interno.cep) updateImportador("cep", interno.cep);
+          if (interno.municipio) updateImportador("municipio", interno.municipio);
+          if (interno.uf) updateImportador("uf", interno.uf);
+          if (interno.telefone) updateImportador("telefone", interno.telefone);
+          if (interno.editalDBF) updateICMSCalculo("editalDBF", interno.editalDBF);
+          preenchidos += 8;
+          usouCadastroInterno = true;
+          toast.success(`Importador encontrado no cadastro interno: ${interno.razaoSocial}`);
+        }
+      } catch (_e) {
+        // Cadastro interno indisponível — usar dados do PDF
+      }
+    }
+    // Fallback: usar dados extraídos do PDF
+    if (!usouCadastroInterno) {
+      if (dados.importadorNome) { updateImportador("nome", dados.importadorNome); preenchidos++; }
+      if (dados.importadorCnpj) { updateImportador("cnpj", dados.importadorCnpj); preenchidos++; }
+      if (dados.importadorEndereco) { updateImportador("endereco", dados.importadorEndereco); preenchidos++; }
+      if (dados.importadorBairro) { updateImportador("bairro", dados.importadorBairro); preenchidos++; }
+      if (dados.importadorCep) { updateImportador("cep", dados.importadorCep); preenchidos++; }
+      if (dados.importadorMunicipio) { updateImportador("municipio", dados.importadorMunicipio); preenchidos++; }
+      if (dados.importadorUf) { updateImportador("uf", dados.importadorUf); preenchidos++; }
+    }
     if (dados.adquirenteNome) { updateAdquirente("nome", dados.adquirenteNome); preenchidos++; }
     if (dados.adquirenteCnpj) { updateAdquirente("cnpj", dados.adquirenteCnpj); preenchidos++; }
 
     // === DADOS DA DECLARAÇÃO (guia 3) ===
-    // Tipo de documento: marcar DUIMP
     const tiposAtuais: string[] = formData.documento.tipo || [];
     if (!tiposAtuais.includes("DUIMP")) {
       updateDocumento("tipo", [...tiposAtuais, "DUIMP"]);
       preenchidos++;
     }
-    // 4.1 Número = número da DUIMP (ex: 26BR0000680227-4)
     if (dados.numeroDuimp) { updateDocumento("numero", dados.numeroDuimp); preenchidos++; }
-    // 4.2 Data do Registro (DD/MM/YYYY → YYYY-MM-DD para input[type=date])
     if (dados.dataRegistro) {
       const [dd, mm, yyyy] = dados.dataRegistro.split("/");
       if (dd && mm && yyyy) { updateDocumento("dataRegistro", `${yyyy}-${mm}-${dd}`); preenchidos++; }
     }
-    // 4.3 Valor CIF (VMLD) = Valor Aduaneiro da DUIMP
     if (dados.valorAduaneiro) {
       updateDocumento("valorCIF", dados.valorAduaneiro);
       updateField("valorCIFAdicion", dados.valorAduaneiro);
       updateICMSCalculo("valorCIF", dados.valorAduaneiro);
       preenchidos++;
     }
-    // 4.4 Recinto Alfandegado = nome após o código de 7 dígitos
     if (dados.recintoNome) { updateDocumento("nomeRecinto", dados.recintoNome); preenchidos++; }
-    // 4.5 Código do Recinto = 7 dígitos antes do nome
     if (dados.recintoCodigoRaw) {
       updateDocumento("codRecinto", dados.recintoCodigoRaw);
       preenchidos++;
-      // 4.6 UF Desembaraço: buscar no cadastro de recintos pelo código
       const recintoEncontrado = recintos.find((r: any) => {
         const codigoDB = r.codigo.replace(/[.\-]/g, "");
         return codigoDB === dados.recintoCodigoRaw || codigoDB.startsWith(dados.recintoCodigoRaw.slice(0, 6));
@@ -179,17 +203,15 @@ export default function Home() {
     }
 
     // === GUIA 5 — ICMS ===
-    // Impostos = Soma do Recolhimento (II + IPI + PIS + COFINS + TAXA SISCOMEX)
     if (dados.impostosTotal && parseFloat(dados.impostosTotal) > 0) {
       updateICMSCalculo("impostos", dados.impostosTotal);
       preenchidos++;
     }
 
-    // === ADIÇÕES (guia 4) — NCMs já consolidadas pelo parser ===
+    // === ADIÇÕES (guia 4) ===
     if (dados.adicoes?.length > 0) {
       const adicoesNormais: any[] = [];
       const textoLinhasNegativas: string[] = [];
-
       dados.adicoes.forEach((ad: any) => {
         if (ncmNaListaNegativa(ad.ncm || "")) {
           const ncmLimpo = (ad.ncm || "").replace(/[^0-9]/g, "");
@@ -203,7 +225,6 @@ export default function Home() {
           adicoesNormais.push(ad);
         }
       });
-
       const numNormais = adicoesNormais.length;
       const numProdutosAtual = formData.produtos.length;
       if (numNormais > numProdutosAtual) {
@@ -217,7 +238,6 @@ export default function Home() {
         if (ad.baseCalculo) updateProduto(idx, "valorAduaneiro", ad.baseCalculo);
         preenchidos++;
       });
-
       if (textoLinhasNegativas.length > 0) {
         const textoAtual = (formData.icmsCalculo as any).textoAdicional || "";
         const novoTexto = textoAtual ? textoAtual + "\n\n" + textoLinhasNegativas.join("\n\n") : textoLinhasNegativas.join("\n\n");
