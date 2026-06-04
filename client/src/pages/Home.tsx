@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+﻿import { useState, useRef, useCallback } from "react";
 import { gerarGLMEPDF } from "@/lib/glmePDF";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -131,6 +131,8 @@ export default function Home() {
 
   const preencherFormularioDuimp = (dados: any) => {
     let preenchidos = 0;
+
+    // === IMPORTADOR ===
     if (dados.importadorNome) { updateImportador("nome", dados.importadorNome); preenchidos++; }
     if (dados.importadorCnpj) { updateImportador("cnpj", dados.importadorCnpj); preenchidos++; }
     if (dados.importadorEndereco) { updateImportador("endereco", dados.importadorEndereco); preenchidos++; }
@@ -140,33 +142,63 @@ export default function Home() {
     if (dados.importadorUf) { updateImportador("uf", dados.importadorUf); preenchidos++; }
     if (dados.adquirenteNome) { updateAdquirente("nome", dados.adquirenteNome); preenchidos++; }
     if (dados.adquirenteCnpj) { updateAdquirente("cnpj", dados.adquirenteCnpj); preenchidos++; }
-    if (dados.taxaSiscomex) { updateICMSCalculo("taxaSiscomex" as any, dados.taxaSiscomex); preenchidos++; }
-    if (dados.valorAduaneiro) { updateICMSCalculo("valorCIF" as any, dados.valorAduaneiro); preenchidos++; }
-    // Adições
+
+    // === DADOS DA DECLARAÇÃO (guia 3) ===
+    // Tipo de documento: marcar DUIMP
+    const tiposAtuais: string[] = formData.documento.tipo || [];
+    if (!tiposAtuais.includes("DUIMP")) {
+      updateDocumento("tipo", [...tiposAtuais, "DUIMP"]);
+      preenchidos++;
+    }
+    // 4.1 Número = número da DUIMP (ex: 26BR0000680227-4)
+    if (dados.numeroDuimp) { updateDocumento("numero", dados.numeroDuimp); preenchidos++; }
+    // 4.3 Valor CIF (VMLD) = Valor Aduaneiro da DUIMP
+    if (dados.valorAduaneiro) {
+      updateDocumento("valorCIF", dados.valorAduaneiro);
+      updateField("valorCIFAdicion", dados.valorAduaneiro);
+      updateICMSCalculo("valorCIF", dados.valorAduaneiro);
+      preenchidos++;
+    }
+    // 4.4 Recinto Alfandegado = nome após o código de 7 dígitos
+    if (dados.recintoNome) { updateDocumento("nomeRecinto", dados.recintoNome); preenchidos++; }
+    // 4.5 Código do Recinto = 7 dígitos antes do nome
+    if (dados.recintoCodigoRaw) {
+      updateDocumento("codRecinto", dados.recintoCodigoRaw);
+      preenchidos++;
+      // 4.6 UF Desembaraço: buscar no cadastro de recintos pelo código
+      const recintoEncontrado = recintos.find((r: any) => {
+        const codigoDB = r.codigo.replace(/[.\-]/g, "");
+        return codigoDB === dados.recintoCodigoRaw || codigoDB.startsWith(dados.recintoCodigoRaw.slice(0, 6));
+      });
+      if (recintoEncontrado?.uf) { updateDocumento("ufDesembaraco", recintoEncontrado.uf); preenchidos++; }
+    }
+
+    // === GUIA 5 — ICMS ===
+    // Impostos = Soma do Recolhimento (II + IPI + PIS + COFINS + TAXA SISCOMEX)
+    if (dados.impostosTotal && parseFloat(dados.impostosTotal) > 0) {
+      updateICMSCalculo("impostos", dados.impostosTotal);
+      preenchidos++;
+    }
+
+    // === ADIÇÕES (guia 4) — NCMs já consolidadas pelo parser ===
     if (dados.adicoes?.length > 0) {
-      const taxaSiscomexTotal = parseFloat(dados.taxaSiscomex || "0");
-      const totalAdicoes = dados.adicoes.length;
-      const taxaPorAdicao = totalAdicoes > 0 ? taxaSiscomexTotal / totalAdicoes : 0;
       const adicoesNormais: any[] = [];
       const textoLinhasNegativas: string[] = [];
+
       dados.adicoes.forEach((ad: any) => {
         if (ncmNaListaNegativa(ad.ncm || "")) {
           const ncmLimpo = (ad.ncm || "").replace(/[^0-9]/g, "");
           const ncm4dig = ncmLimpo.slice(0, 4);
           const aliquotaInfo = verificarAliquotaNCM(ncm4dig);
           const aliquotaPct = aliquotaInfo ? aliquotaInfo.aliquota : 20.5;
-          const baseCalculo = parseFloat(ad.baseCalculo || "0");
-          const impostosAdicao = parseFloat(ad.ii || "0") + parseFloat(ad.ipi || "0") + parseFloat(ad.pis || "0") + parseFloat(ad.cofins || "0");
-          const somaBase = baseCalculo + impostosAdicao + taxaPorAdicao;
-          const valorICMS = (somaBase / 0.795) * (aliquotaPct / 100);
-          const valorICMSStr = formatarMoeda(valorICMS);
           textoLinhasNegativas.push(
-            `ADI\u00c7\u00c3O ${ad.numero} - TRIBUTA\u00c7\u00c3O NORMAL - ALIQUOTA ${aliquotaPct}% - VALOR DO ICMS - R$ ${valorICMSStr}\nA ADI\u00c7\u00c3O ${ad.numero} \u00c9 RECOLHIMENTO INTEGRAL, POR ISSO ELA N\u00c3O CONSTA NA GLME.`
+            `ADIÇÃO ${ad.numero} - NCM ${ad.ncm} - TRIBUTAÇÃO NORMAL - ALIQUOTA ${aliquotaPct}%\nA ADIÇÃO ${ad.numero} É RECOLHIMENTO INTEGRAL, POR ISSO ELA NÃO CONSTA NA GLME.`
           );
         } else {
           adicoesNormais.push(ad);
         }
       });
+
       const numNormais = adicoesNormais.length;
       const numProdutosAtual = formData.produtos.length;
       if (numNormais > numProdutosAtual) {
@@ -180,13 +212,15 @@ export default function Home() {
         if (ad.baseCalculo) updateProduto(idx, "valorAduaneiro", ad.baseCalculo);
         preenchidos++;
       });
+
       if (textoLinhasNegativas.length > 0) {
         const textoAtual = (formData.icmsCalculo as any).textoAdicional || "";
         const novoTexto = textoAtual ? textoAtual + "\n\n" + textoLinhasNegativas.join("\n\n") : textoLinhasNegativas.join("\n\n");
         updateICMSCalculo("textoAdicional" as any, novoTexto);
-        toast.info(`${textoLinhasNegativas.length} adição(ões) da lista negativa removida(s) da guia 4.`);
+        toast.info(`${textoLinhasNegativas.length} adição(ões) da lista negativa registrada(s) na guia 5.`);
       }
     }
+
     setShowDuimpModal(false);
     if (preenchidos > 0) {
       toast.success(`DUIMP importada! ${preenchidos} campos preenchidos.`);

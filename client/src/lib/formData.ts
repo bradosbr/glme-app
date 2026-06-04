@@ -103,6 +103,7 @@ export const TIPOS_DOCUMENTO = [
   { value: "DI", label: "DI - Declaração de Importação" },
   { value: "DSI", label: "DSI - Declaração Simplificada de Importação" },
   { value: "DA", label: "DA - Declaração de Admissão" },
+  { value: "DUIMP", label: "DUIMP - Declaração Única de Importação" },
 ];
 
 // Tratamentos tributários
