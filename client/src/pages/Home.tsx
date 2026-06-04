@@ -152,6 +152,11 @@ export default function Home() {
     }
     // 4.1 Número = número da DUIMP (ex: 26BR0000680227-4)
     if (dados.numeroDuimp) { updateDocumento("numero", dados.numeroDuimp); preenchidos++; }
+    // 4.2 Data do Registro (DD/MM/YYYY → YYYY-MM-DD para input[type=date])
+    if (dados.dataRegistro) {
+      const [dd, mm, yyyy] = dados.dataRegistro.split("/");
+      if (dd && mm && yyyy) { updateDocumento("dataRegistro", `${yyyy}-${mm}-${dd}`); preenchidos++; }
+    }
     // 4.3 Valor CIF (VMLD) = Valor Aduaneiro da DUIMP
     if (dados.valorAduaneiro) {
       updateDocumento("valorCIF", dados.valorAduaneiro);
