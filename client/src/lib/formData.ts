@@ -1,0 +1,126 @@
+// Estados do Brasil
+export const ESTADOS_BRASIL = [
+  { value: "AC", label: "Acre" },
+  { value: "AL", label: "Alagoas" },
+  { value: "AP", label: "Amapá" },
+  { value: "AM", label: "Amazonas" },
+  { value: "BA", label: "Bahia" },
+  { value: "CE", label: "Ceará" },
+  { value: "DF", label: "Distrito Federal" },
+  { value: "ES", label: "Espírito Santo" },
+  { value: "GO", label: "Goiás" },
+  { value: "MA", label: "Maranhão" },
+  { value: "MT", label: "Mato Grosso" },
+  { value: "MS", label: "Mato Grosso do Sul" },
+  { value: "MG", label: "Minas Gerais" },
+  { value: "PA", label: "Pará" },
+  { value: "PB", label: "Paraíba" },
+  { value: "PR", label: "Paraná" },
+  { value: "PE", label: "Pernambuco" },
+  { value: "PI", label: "Piauí" },
+  { value: "RJ", label: "Rio de Janeiro" },
+  { value: "RN", label: "Rio Grande do Norte" },
+  { value: "RS", label: "Rio Grande do Sul" },
+  { value: "RO", label: "Rondônia" },
+  { value: "RR", label: "Roraima" },
+  { value: "SC", label: "Santa Catarina" },
+  { value: "SP", label: "São Paulo" },
+  { value: "SE", label: "Sergipe" },
+  { value: "TO", label: "Tocantins" },
+];
+
+// Dados de exemplo de empresas
+export const EMPRESAS = [
+  {
+    id: "1",
+    nome: "Porto de Santos S.A.",
+    inscricaoEstadual: "123.456.789.012",
+    cnpj: "12.345.678/0001-90",
+    cnae: "5211-600",
+    endereco: "Av. Portuária, 100",
+    bairro: "Centro",
+    cep: "11010-100",
+    municipio: "Santos",
+    uf: "SP",
+    telefone: "(13) 3201-6000",
+  },
+  {
+    id: "2",
+    nome: "Terminal de Contêineres do Rio de Janeiro",
+    inscricaoEstadual: "234.567.890.123",
+    cnpj: "23.456.789/0001-01",
+    cnae: "5211-600",
+    endereco: "Av. Brasil, 5000",
+    bairro: "Gamboa",
+    cep: "20040-020",
+    municipio: "Rio de Janeiro",
+    uf: "RJ",
+    telefone: "(21) 2103-8000",
+  },
+  {
+    id: "3",
+    nome: "Porto de Paranaguá Ltda.",
+    inscricaoEstadual: "345.678.901.234",
+    cnpj: "34.567.890/0001-12",
+    cnae: "5211-600",
+    endereco: "Rua Comendador Araújo, 200",
+    bairro: "Saco do Alemoa",
+    cep: "83205-000",
+    municipio: "Paranaguá",
+    uf: "PR",
+    telefone: "(41) 3033-6000",
+  },
+  {
+    id: "4",
+    nome: "Companhia Docas do Estado de São Paulo",
+    inscricaoEstadual: "456.789.012.345",
+    cnpj: "45.678.901/0001-23",
+    cnae: "5211-600",
+    endereco: "Av. Rodrigues Alves, 50",
+    bairro: "Vila Mariana",
+    cep: "04014-010",
+    municipio: "São Paulo",
+    uf: "SP",
+    telefone: "(11) 3203-6000",
+  },
+  {
+    id: "5",
+    nome: "Operadora Portuária Bahia Express",
+    inscricaoEstadual: "567.890.123.456",
+    cnpj: "56.789.012/0001-34",
+    cnae: "5211-600",
+    endereco: "Av. Tancredo Neves, 1000",
+    bairro: "Barra",
+    cep: "42810-010",
+    municipio: "Salvador",
+    uf: "BA",
+    telefone: "(71) 3203-6000",
+  },
+];
+
+// Tipos de documentos de importação
+export const TIPOS_DOCUMENTO = [
+  { value: "DI", label: "DI - Declaração de Importação" },
+  { value: "DSI", label: "DSI - Declaração Simplificada de Importação" },
+  { value: "DA", label: "DA - Declaração de Admissão" },
+];
+
+// Tratamentos tributários
+export const TRATAMENTOS_TRIBUTARIOS = [
+  { value: "1", label: "1 - Drawback" },
+  { value: "2", label: "2 - Regime Especial" },
+  { value: "3", label: "3 - Diferimento" },
+  { value: "4", label: "4 - Isenção" },
+  { value: "5", label: "5 - Não-incidência/Imunidade" },
+  { value: "6", label: "6 - Outros" },
+];
+
+// Recintos alfandegados principais
+export const RECINTOS_ALFANDEGADOS = [
+  { id: "001", nome: "Porto de Santos - SP", uf: "SP" },
+  { id: "002", nome: "Porto do Rio de Janeiro - RJ", uf: "RJ" },
+  { id: "003", nome: "Porto de Paranaguá - PR", uf: "PR" },
+  { id: "004", nome: "Aeroporto Internacional de São Paulo - SP", uf: "SP" },
+  { id: "005", nome: "Porto de Salvador - BA", uf: "BA" },
+  { id: "006", nome: "Porto de Manaus - AM", uf: "AM" },
+];

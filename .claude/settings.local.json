@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/diego/Downloads/glme_formulario_extracted/client/**)",
+      "Read(//c/Users/diego/Downloads/glme_formulario_extracted/server/**)",
+      "Read(//c/Users/diego/Downloads/glme_formulario_extracted/shared/**)",
+      "Bash(powershell -command \"Copy-Item -Path 'C:\\\\Users\\\\diego\\\\Downloads\\\\glme_formulario_extracted\\\\*' -Destination 'C:\\\\Users\\\\diego\\\\OneDrive\\\\App GLME\\\\' -Recurse -Force\")",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(where pnpm *)",
+      "Bash(npm install *)",
+      "PowerShell(Get-Command pnpm -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Command npm -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Command node -ErrorAction SilentlyContinue)"
+    ]
+  }
+}
