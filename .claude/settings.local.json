@@ -11,7 +11,10 @@
       "Bash(npm install *)",
       "PowerShell(Get-Command pnpm -ErrorAction SilentlyContinue)",
       "PowerShell(Get-Command npm -ErrorAction SilentlyContinue)",
-      "PowerShell(Get-Command node -ErrorAction SilentlyContinue)"
+      "PowerShell(Get-Command node -ErrorAction SilentlyContinue)",
+      "Bash(git commit -m ' *)",
+      "Bash(python3 -c ' *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\diego\\\\OneDrive\\\\App GLME\\\\dist\" -Recurse | Select-Object FullName, @{N='Size';E={\"{0:N0} KB\" -f \\($_.Length/1KB\\)}} | Where-Object {$_.Size -ne \" KB\"})"
     ]
   }
 }
