@@ -1,8 +1,11 @@
 import { z } from "zod";
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
+import { sdk } from "./_core/sdk";
+import { verifyPassword } from "./password";
+import { TRPCError } from "@trpc/server";
 import {
   getImportadores,
   getImportadorByCnpj,
@@ -11,6 +14,15 @@ import {
   searchImportadores,
   getRecintos,
   seedRecintos,
+  getUserByUsername,
+  getUserById,
+  listUsers,
+  createLocalUser,
+  setUserPassword,
+  updateUserFields,
+  deleteUser,
+  requestPasswordReset,
+  touchLastSignedIn,
 } from "./db";
 import axios from "axios";
 import * as xml2js from "xml2js";
@@ -428,12 +440,124 @@ function parseDIXML(xmlContent: string): Promise<Record<string, unknown>> {
 export const appRouter = router({
   system: systemRouter,
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query(opts => {
+      if (!opts.ctx.user) return null;
+      const { passwordHash: _ph, ...safe } = opts.ctx.user;
+      return safe;
+    }),
+
+    login: publicProcedure
+      .input(z.object({
+        username: z.string().min(1, "Informe o usuário"),
+        password: z.string().min(1, "Informe a senha"),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const user = await getUserByUsername(input.username);
+        if (!user || !(await verifyPassword(input.password, user.passwordHash))) {
+          // Mensagem genérica para não revelar qual campo está errado
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Usuário ou senha inválidos" });
+        }
+        if (!user.active) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Usuário desativado. Contate o administrador." });
+        }
+        const sessionToken = await sdk.createSessionToken(user.openId, {
+          name: user.name || user.username || "",
+          expiresInMs: ONE_YEAR_MS,
+        });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+        await touchLastSignedIn(user.id);
+        const { passwordHash: _ph, ...safe } = user;
+        return safe;
+      }),
+
+    // "Esqueci minha senha": apenas sinaliza ao administrador (sem e-mail).
+    forgotPassword: publicProcedure
+      .input(z.object({ username: z.string().min(1, "Informe o usuário") }))
+      .mutation(async ({ input }) => {
+        await requestPasswordReset(input.username);
+        return { success: true } as const;
+      }),
+
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+  }),
+
+  // ===== USUÁRIOS (somente admin) =====
+  usuarios: router({
+    listar: adminProcedure.query(async () => {
+      return await listUsers();
+    }),
+
+    criar: adminProcedure
+      .input(z.object({
+        username: z.string().min(1, "Usuário é obrigatório"),
+        password: z.string().min(6, "Senha deve ter ao menos 6 caracteres"),
+        name: z.string().optional(),
+        email: z.string().email("E-mail inválido").optional().or(z.literal("")),
+        role: z.enum(["user", "admin"]).default("user"),
+      }))
+      .mutation(async ({ input }) => {
+        try {
+          const user = await createLocalUser({
+            username: input.username,
+            password: input.password,
+            name: input.name || input.username,
+            email: input.email || null,
+            role: input.role,
+          });
+          if (!user) throw new Error("Falha ao criar usuário");
+          const { passwordHash: _ph, ...safe } = user;
+          return safe;
+        } catch (e) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: e instanceof Error ? e.message : "Erro ao criar usuário" });
+        }
+      }),
+
+    redefinirSenha: adminProcedure
+      .input(z.object({
+        id: z.number().int().positive(),
+        password: z.string().min(6, "Senha deve ter ao menos 6 caracteres"),
+      }))
+      .mutation(async ({ input }) => {
+        await setUserPassword(input.id, input.password);
+        return { success: true } as const;
+      }),
+
+    atualizar: adminProcedure
+      .input(z.object({
+        id: z.number().int().positive(),
+        name: z.string().optional(),
+        email: z.string().email("E-mail inválido").optional().or(z.literal("")),
+        role: z.enum(["user", "admin"]).optional(),
+        active: z.boolean().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        // Impede que o admin desative/rebaixe a própria conta e fique sem acesso
+        if (input.id === ctx.user.id && (input.active === false || input.role === "user")) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Você não pode rebaixar ou desativar a própria conta." });
+        }
+        await updateUserFields(input.id, {
+          name: input.name,
+          email: input.email === "" ? null : input.email,
+          role: input.role,
+          active: input.active,
+        });
+        return { success: true } as const;
+      }),
+
+    excluir: adminProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input, ctx }) => {
+        if (input.id === ctx.user.id) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Você não pode excluir a própria conta." });
+        }
+        await deleteUser(input.id);
+        return { success: true } as const;
+      }),
   }),
 
   // ===== CNPJ =====

@@ -15,6 +15,13 @@
       "when": 1773671729827,
       "tag": "0001_short_mongu",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1783620876738,
+      "tag": "0002_nosy_supreme_intelligence",
+      "breakpoints": true
     }
   ]
 }

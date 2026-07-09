@@ -2,6 +2,7 @@ import { eq, like, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, importadores, recintos, InsertImportador, InsertRecinto } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { hashPassword } from "./password";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -48,6 +49,127 @@ export async function getUserByOpenId(openId: string) {
   if (!db) { console.warn("[Database] Cannot get user: database not available"); return undefined; }
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+// ===== AUTENTICAÇÃO LOCAL (usuário + senha) =====
+
+const normalizeUsername = (username: string) => username.trim().toLowerCase();
+
+export async function getUserByUsername(username: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.username, normalizeUsername(username))).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function listUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(users).orderBy(users.username);
+  // Nunca expor o hash da senha
+  return rows.map(({ passwordHash, ...rest }) => rest);
+}
+
+export type CreateLocalUserInput = {
+  username: string;
+  password: string;
+  name?: string | null;
+  email?: string | null;
+  role?: "user" | "admin";
+};
+
+export async function createLocalUser(input: CreateLocalUserInput) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const username = normalizeUsername(input.username);
+  if (!username) throw new Error("Usuário é obrigatório");
+  if (!input.password || input.password.length < 6) throw new Error("Senha deve ter ao menos 6 caracteres");
+  const existing = await getUserByUsername(username);
+  if (existing) throw new Error("Já existe um usuário com esse nome");
+  const passwordHash = await hashPassword(input.password);
+  await db.insert(users).values({
+    openId: `local:${username}`,
+    username,
+    passwordHash,
+    name: input.name ?? username,
+    email: input.email ?? null,
+    loginMethod: "password",
+    role: input.role ?? "user",
+    active: true,
+    resetRequested: false,
+    lastSignedIn: new Date(),
+  });
+  return getUserByUsername(username);
+}
+
+export async function setUserPassword(id: number, newPassword: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (!newPassword || newPassword.length < 6) throw new Error("Senha deve ter ao menos 6 caracteres");
+  const passwordHash = await hashPassword(newPassword);
+  await db.update(users).set({ passwordHash, resetRequested: false }).where(eq(users.id, id));
+}
+
+export async function updateUserFields(id: number, fields: { name?: string | null; email?: string | null; role?: "user" | "admin"; active?: boolean }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const set: Record<string, unknown> = {};
+  if (fields.name !== undefined) set.name = fields.name;
+  if (fields.email !== undefined) set.email = fields.email;
+  if (fields.role !== undefined) set.role = fields.role;
+  if (fields.active !== undefined) set.active = fields.active;
+  if (Object.keys(set).length === 0) return;
+  await db.update(users).set(set).where(eq(users.id, id));
+}
+
+export async function deleteUser(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(users).where(eq(users.id, id));
+}
+
+export async function requestPasswordReset(username: string) {
+  const db = await getDb();
+  if (!db) return;
+  const user = await getUserByUsername(username);
+  // Sempre retorna sem erro (não revelar se o usuário existe)
+  if (!user) return;
+  await db.update(users).set({ resetRequested: true }).where(eq(users.id, user.id));
+}
+
+export async function touchLastSignedIn(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, id));
+}
+
+/**
+ * Cria o administrador inicial a partir das variáveis de ambiente,
+ * caso ainda não exista nenhum admin no banco.
+ */
+export async function seedAdmin() {
+  const db = await getDb();
+  if (!db) return;
+  const username = process.env.ADMIN_USERNAME?.trim() || "admin";
+  const password = process.env.ADMIN_PASSWORD?.trim() || "admin123";
+  const existingAdmins = await db.select().from(users).where(eq(users.role, "admin")).limit(1);
+  if (existingAdmins.length > 0) return;
+  const existing = await getUserByUsername(username);
+  if (existing) {
+    // Promove usuário existente a admin
+    await db.update(users).set({ role: "admin", active: true }).where(eq(users.id, existing.id));
+    console.log(`[DB] Usuário '${username}' promovido a admin`);
+    return;
+  }
+  await createLocalUser({ username, password, name: "Administrador", role: "admin" });
+  console.log(`[DB] Administrador inicial '${username}' criado`);
 }
 
 // ===== IMPORTADORES =====

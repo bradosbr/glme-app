@@ -3,14 +3,32 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
+import ProtectedRoute from "./components/ProtectedRoute";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import Login from "./pages/Login";
+import EsqueciSenha from "./pages/EsqueciSenha";
+import Usuarios from "./pages/Usuarios";
 
 function Router() {
-  // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
-      <Route path={"/"} component={Home} />
+      {/* Rotas públicas de autenticação */}
+      <Route path="/login" component={Login} />
+      <Route path="/esqueci-senha" component={EsqueciSenha} />
+
+      {/* Rotas protegidas */}
+      <Route path="/">
+        <ProtectedRoute>
+          <Home />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/usuarios">
+        <ProtectedRoute requireAdmin>
+          <Usuarios />
+        </ProtectedRoute>
+      </Route>
+
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />

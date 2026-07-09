@@ -42,13 +42,19 @@ import {
   FileSearch2,
   Link,
   Upload,
+  LogOut,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { useLocation } from "wouter";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { ncmNaListaNegativa } from "@/lib/listaNegativa";
 import { verificarAliquotaNCM, formatarMoeda } from "@/lib/aliquotasICMS";
 
 export default function Home() {
+  const { user, isAdmin, logout } = useAuth();
+  const [, navigate] = useLocation();
   const {
     formData,
     updateField,
@@ -618,6 +624,28 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
+        {/* Barra de usuário */}
+        <div className="flex items-center justify-end gap-2 mb-3 text-sm">
+          <span className="text-slate-500">
+            Olá, <strong className="text-slate-700">{user?.name || user?.username}</strong>
+          </span>
+          {isAdmin && (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => navigate("/usuarios")}>
+              <Users className="w-4 h-4" />
+              Usuários
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-slate-600 hover:text-red-600"
+            onClick={async () => { await logout(); navigate("/login"); }}
+          >
+            <LogOut className="w-4 h-4" />
+            Sair
+          </Button>
+        </div>
+
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-slate-900 mb-1">
