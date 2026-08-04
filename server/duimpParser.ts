@@ -290,10 +290,12 @@ export function parsearDuimpPDF(textoPDF: string): DuimpParsedData {
   const numM =
     texto.match(/Duimp:\s*(\d{2}BR[\d]+-\d)\s+Vers[aã]o:\s*(\d+)/i) ||
     texto.match(/Extrato DUIMP:\s*(\d{2}BR[\d]+-\d)\s*\/\s*Vers[aã]o\s+(\d+)/i) ||
-    texto.match(/Extrato da Duimp\s+(\d{2}BR[\d]+-\d)\s*\/\s*Vers[aã]o\s+(\d+)/i);
+    texto.match(/Extrato da Duimp\s+(\d{2}BR[\d]+-\d)\s*\/\s*Vers[aã]o\s+(\d+)/i) ||
+    // Fallback: "DUIMP Nº 25BR000123456-0" (versão opcional)
+    texto.match(/DUIMP\s*N[ºo°]\s*(\d{2}BR[\d]+-\d)(?:\s*[/-]?\s*Vers[aã]o[:\s]*(\d+))?/i);
   if (numM) {
     r.numeroDuimp = numM[1].toUpperCase();
-    r.versaoDuimp = String(parseInt(numM[2], 10));
+    if (numM[2]) r.versaoDuimp = String(parseInt(numM[2], 10));
   }
 
   // === DATA DE REGISTRO ===
@@ -367,12 +369,15 @@ export function parsearDuimpPDF(textoPDF: string): DuimpParsedData {
   if (totalImp > 0) r.impostosTotal = totalImp.toFixed(2);
 
   // === ADIÇÕES / ITENS ===
-  if (formato === "extrato_original") {
-    r.adicoes = consolidarPorNCM(itensDoExtratoOriginal(texto));
-  } else if (formato === "extrato_completo") {
-    r.adicoes = consolidarPorNCM(itensDoExtratoCompleto(texto));
-  }
-  // Extrato Simples e Débitos: sem itens
+  // A extração de itens é independente do formato dos impostos: um "Extrato
+  // Completo" pode conter a seção "Demonstrativo dos Débitos" (que o faria ser
+  // classificado como "debitos") e ainda assim listar os itens no padrão
+  // "Item NNNNN". Por isso tentamos ambos os extratores em qualquer formato e
+  // usamos o primeiro que encontrar itens.
+  let itens = itensDoExtratoOriginal(texto);
+  if (itens.length === 0) itens = itensDoExtratoCompleto(texto);
+  // Sempre retorna um array (vazio quando o extrato não lista itens).
+  r.adicoes = consolidarPorNCM(itens);
 
   return r;
 }
