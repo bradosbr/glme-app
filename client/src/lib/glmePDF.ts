@@ -124,7 +124,19 @@ export async function gerarGLMEPDF(formData: GLMEFormData): Promise<void> {
 
   page1(doc, formData);
   doc.addPage("a4", "landscape");
-  page2(doc, formData);
+  page2(doc, formData, 3);
+
+  // Se houver mais adições do que cabe na frente (3) + no verso (12),
+  // gera páginas adicionais idênticas ao verso até listar todas.
+  const prods = formData.produtos || [];
+  const FRONT_CAP = 3;
+  const BACK_CAP = 12;
+  let startIdx = FRONT_CAP + BACK_CAP; // 15 = primeira adição que não coube no verso
+  while (prods.length > startIdx) {
+    doc.addPage("a4", "landscape");
+    page2(doc, formData, startIdx);
+    startIdx += BACK_CAP;
+  }
 
   const dt = new Date().toISOString().slice(0, 10);
   doc.save(`GLME_${(formData.importador.nome || "formulario").replace(/\s+/g, "_")}_${dt}.pdf`);
@@ -434,7 +446,7 @@ function page1(doc: jsPDF, fd: GLMEFormData) {
 // ============================================================
 // PÁGINA 2 - VERSO
 // ============================================================
-function page2(doc: jsPDF, fd: GLMEFormData) {
+function page2(doc: jsPDF, fd: GLMEFormData, startIdx = 3) {
   const ML = 10, MT = 12;
   const PW = 297;
   const CW = PW - ML - 10;
@@ -473,7 +485,7 @@ function page2(doc: jsPDF, fd: GLMEFormData) {
 
   // Desenhar bordas das células 5.1, 5.2, 5.3 por linha (não mescladas)
   for (let i = 0; i < maxBack; i++) {
-    const p = prods[i + 3]; // adições a partir da 4ª continuam no verso
+    const p = prods[i + startIdx]; // lote de adições exibido neste verso
     const ry = y + i * ph;
     box(doc, ML, ry, c1, ph);
     box(doc, ML + c1, ry, c2, ph);
