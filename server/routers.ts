@@ -26,7 +26,6 @@ import {
 } from "./db";
 import axios from "axios";
 import * as xml2js from "xml2js";
-import { PDFParse } from "pdf-parse";
 import { parsearDuimpPDF, type DuimpParsedData } from "./duimpParser";
 
 /**
@@ -571,17 +570,17 @@ export const appRouter = router({
 
   // ===== IMPORTADORES =====
   importadores: router({
-    listar: publicProcedure.query(async () => {
+    listar: protectedProcedure.query(async () => {
       return await getImportadores();
     }),
 
-    buscar: publicProcedure
+    buscar: protectedProcedure
       .input(z.object({ query: z.string() }))
       .query(async ({ input }) => {
         return await searchImportadores(input.query);
       }),
 
-    salvar: publicProcedure
+    salvar: protectedProcedure
       .input(z.object({
         cnpj: z.string(),
         razaoSocial: z.string(),
@@ -601,13 +600,13 @@ export const appRouter = router({
         return await upsertImportador(input);
       }),
 
-    buscarPorCNPJ: publicProcedure
+    buscarPorCNPJ: protectedProcedure
       .input(z.object({ cnpj: z.string() }))
       .query(async ({ input }) => {
         return await getImportadorByCnpj(input.cnpj);
       }),
 
-    excluir: publicProcedure
+    excluir: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await deleteImportador(input.id);
@@ -617,7 +616,7 @@ export const appRouter = router({
 
   // ===== RECINTOS =====
   recintos: router({
-    listar: publicProcedure
+    listar: protectedProcedure
       .input(z.object({ tipo: z.string().optional() }).optional())
       .query(async ({ input }) => {
         await seedRecintos();
@@ -627,7 +626,7 @@ export const appRouter = router({
 
   // ===== IMPORTAÇÃO DE DI =====
   di: router({
-    parsearXML: publicProcedure
+    parsearXML: protectedProcedure
       .input(z.object({ xmlContent: z.string() }))
       .mutation(async ({ input }) => {
         return await parseDIXML(input.xmlContent);
@@ -636,25 +635,21 @@ export const appRouter = router({
 
   // ===== IMPORTAÇÃO DE DUIMP =====
   duimp: router({
-    // Parsear PDF do extrato DUIMP (base64)
-    parsearPDF: publicProcedure
-      .input(z.object({ pdfBase64: z.string() }))
+    // Parsear o texto do extrato DUIMP (extraído do PDF no navegador)
+    parsearPDF: protectedProcedure
+      .input(z.object({ texto: z.string() }))
       .mutation(async ({ input }) => {
         try {
-          const buffer = Buffer.from(input.pdfBase64, "base64");
-          const parser = new PDFParse({ data: buffer });
-          const textResult = await parser.getText();
-          const texto = textResult.text;
-          const resultado = parsearDuimpPDF(texto);
-          return { sucesso: true, dados: resultado, textoBruto: texto };
+          const resultado = parsearDuimpPDF(input.texto);
+          return { sucesso: true, dados: resultado };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          return { sucesso: false, erro: `Erro ao processar PDF: ${msg}`, dados: null, textoBruto: "" };
+          return { sucesso: false, erro: `Erro ao processar PDF: ${msg}`, dados: null };
         }
       }),
 
     // Consultar DUIMP via API do Portal Único (proxy)
-    consultarAPI: publicProcedure
+    consultarAPI: protectedProcedure
       .input(z.object({
         numeroDuimp: z.string(),
         versaoDuimp: z.string().default("0"),

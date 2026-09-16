@@ -113,3 +113,6 @@ temp/
 .manus/
 .manus-logs/
 client/public/__manus__/
+
+# Vercel
+.vercel

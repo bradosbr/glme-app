@@ -38,9 +38,23 @@ vi.mock("./db", () => ({
   upsertUser: vi.fn().mockResolvedValue(undefined),
 }));
 
-function createPublicContext(): TrpcContext {
+function createAuthContext(): TrpcContext {
   return {
-    user: null,
+    user: {
+      id: 1,
+      openId: "test-user",
+      username: "test-user",
+      passwordHash: null,
+      email: "test@test.com",
+      name: "Test User",
+      loginMethod: "local",
+      role: "user",
+      active: true,
+      resetRequested: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastSignedIn: new Date(),
+    },
     req: { protocol: "https", headers: {} } as TrpcContext["req"],
     res: {
       clearCookie: vi.fn(),
@@ -50,7 +64,7 @@ function createPublicContext(): TrpcContext {
 
 describe("GLME - Importadores", () => {
   it("lista importadores cadastrados", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.importadores.listar();
     expect(Array.isArray(result)).toBe(true);
@@ -60,7 +74,7 @@ describe("GLME - Importadores", () => {
   });
 
   it("salva um importador com edital DBF", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.importadores.salvar({
       cnpj: "12345678000190",
@@ -71,7 +85,7 @@ describe("GLME - Importadores", () => {
   });
 
   it("exclui um importador por ID", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.importadores.excluir({ id: 1 });
     expect(result).toEqual({ success: true });
@@ -80,7 +94,7 @@ describe("GLME - Importadores", () => {
 
 describe("GLME - Recintos Alfandegados", () => {
   it("lista todos os recintos alfandegados", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.recintos.listar();
     expect(Array.isArray(result)).toBe(true);
@@ -88,7 +102,7 @@ describe("GLME - Recintos Alfandegados", () => {
   });
 
   it("recintos possuem código e nome", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.recintos.listar();
     result.forEach((r: any) => {
@@ -101,7 +115,7 @@ describe("GLME - Recintos Alfandegados", () => {
 
 describe("GLME - Parser DI XML", () => {
   it("parseia XML de DI com estrutura básica", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     // XML no formato SISCOMEX real (campos planos, não aninhados)
     const xmlSimples = `<?xml version="1.0" encoding="UTF-8"?>
@@ -121,7 +135,7 @@ describe("GLME - Parser DI XML", () => {
   });
 
   it("retorna estrutura vazia para XML sem dados de importador", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const xmlVazio = `<?xml version="1.0" encoding="UTF-8"?><declaracaoImportacao></declaracaoImportacao>`;
     const result = await caller.di.parsearXML({ xmlContent: xmlVazio });
@@ -133,7 +147,7 @@ describe("GLME - Parser DI XML", () => {
 
 describe("GLME - Parser DI XML com Adições", () => {
   it("parseia XML com adições e extrai numero e NCM", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const xmlComAdicoes = `<?xml version="1.0" encoding="UTF-8"?>
 <declaracaoImportacao>
@@ -185,7 +199,7 @@ describe("GLME - Cálculo ICMS", () => {
 describe("GLME - Recintos RJ específicos", () => {
   it("deve conter ICTSI Rio Brasil Terminal na lista mockada", async () => {
     // O mock retorna recintos genéricos, mas verifica que a estrutura está correta
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const recintos = await caller.recintos.listar();
     expect(Array.isArray(recintos)).toBe(true);
@@ -243,7 +257,7 @@ describe("GLME - PDF Layout", () => {
 
 describe("GLME - Parser DI XML Robusto", () => {
   it("parseia XML com formato SISCOMEX alternativo (DI maiúsculo)", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const xmlAlternativo = `<?xml version="1.0" encoding="UTF-8"?>
 <DI>
@@ -270,7 +284,7 @@ describe("GLME - Parser DI XML Robusto", () => {
   });
 
   it("converte data YYYYMMDD para DD/MM/YYYY", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const xmlComData = `<?xml version="1.0" encoding="UTF-8"?>
 <declaracaoImportacao>
@@ -283,7 +297,7 @@ describe("GLME - Parser DI XML Robusto", () => {
   });
 
   it("retorna erro para XML inválido", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     await expect(
       caller.di.parsearXML({ xmlContent: "isso nao e xml valido!!!" })
@@ -338,28 +352,28 @@ describe("GLME - Parser XML SISCOMEX formato real (ListaDeclaracoes)", () => {
 </ListaDeclaracoes>`;
 
   it("extrai número da DI do formato ListaDeclaracoes", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlSiscomexReal });
     expect(result.numeroDI).toBe("2604023996");
   });
 
   it("converte data de registro YYYYMMDD para DD/MM/YYYY", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlSiscomexReal });
     expect(result.dataRegistro).toBe("12/03/2026");
   });
 
   it("converte data de chegada YYYYMMDD para DD/MM/YYYY", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlSiscomexReal });
     expect(result.dataChegada).toBe("10/03/2026");
   });
 
   it("extrai dados completos do importador", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlSiscomexReal });
     const imp = result.importador as any;
@@ -372,7 +386,7 @@ describe("GLME - Parser XML SISCOMEX formato real (ListaDeclaracoes)", () => {
   });
 
   it("extrai recinto aduaneiro com código formatado", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlSiscomexReal });
     expect(result.recintoNome).toBe("ICTSI RIO BRASIL TERMINAL 1 SA");
@@ -381,14 +395,14 @@ describe("GLME - Parser XML SISCOMEX formato real (ListaDeclaracoes)", () => {
   });
 
   it("extrai valor CIF em reais do campo informacaoComplementar", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlSiscomexReal });
     expect(result.valorCIFReais).toBe("145668.92");
   });
 
   it("extrai adições com número sem zeros à esquerda e NCM", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlSiscomexReal });
     const adicoes = result.adicoes as any[];
@@ -401,7 +415,7 @@ describe("GLME - Parser XML SISCOMEX formato real (ListaDeclaracoes)", () => {
   });
 
   it("extrai via de transporte, transportador e veículo", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlSiscomexReal });
     expect(result.viaTransporte).toBe("MARÍTIMA");
@@ -410,7 +424,7 @@ describe("GLME - Parser XML SISCOMEX formato real (ListaDeclaracoes)", () => {
   });
 
   it("extrai URF de despacho", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlSiscomexReal });
     expect(result.urfNome).toBe("PORTO DO RIO DE JANEIRO");
@@ -422,7 +436,7 @@ describe("GLME - Parser XML SISCOMEX formato real (ListaDeclaracoes)", () => {
 describe("GLME - Cálculo ICMS Lista Negativa (Fórmula Correta)", () => {
   it("verifica alíquota pelos 4 primeiros dígitos da NCM no Anexo I", async () => {
     // NCM 24021000 → prefixo "2402" → alíquota 29% (Grupo 1 - tabaco)
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <ListaDeclaracoes>
@@ -536,7 +550,7 @@ describe("GLME - Impostos Individuais por Adição", () => {
 </ListaDeclaracoes>`;
 
   it("extrai impostos individuais de cada adição", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlComImpostos });
     const adicoes = result.adicoes as any[];
@@ -551,7 +565,7 @@ describe("GLME - Impostos Individuais por Adição", () => {
   });
 
   it("extrai impostos individuais da adição da lista negativa", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlComImpostos });
     const adicoes = result.adicoes as any[];
@@ -565,7 +579,7 @@ describe("GLME - Impostos Individuais por Adição", () => {
   });
 
   it("adição sem campos de impostos retorna impostos zerados", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     // Usar o XML original que não tem campos de impostos individuais
     const xmlSemImpostos = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -599,7 +613,7 @@ describe("GLME - Impostos Individuais por Adição", () => {
 
 describe("GLME - Lista Negativa NCM", () => {
   it("NCM 01022110 está na lista negativa", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <ListaDeclaracoes>
@@ -630,7 +644,7 @@ describe("GLME - Lista Negativa NCM", () => {
   });
 
   it("NCM 39241000 não está na lista negativa", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <ListaDeclaracoes>
@@ -687,7 +701,7 @@ describe("GLME - Cálculo ICMS com VCMV e Taxa FOB", () => {
 </ListaDeclaracoes>`;
 
   it("extrai taxaFOB calculada a partir dos valores FOB do informacaoComplementar", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlComVCMVeTaxaFOB });
     // Taxa FOB = 5159.60 / 1000.00 = 5.15960
@@ -697,7 +711,7 @@ describe("GLME - Cálculo ICMS com VCMV e Taxa FOB", () => {
   });
 
   it("extrai VCMV (valorMoeda) da adição em moeda estrangeira", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlComVCMVeTaxaFOB });
     const adicoes = result.adicoes as any[];
@@ -759,7 +773,7 @@ describe("GLME - Taxa FOB do campo condicaoVendaTaxaCambio", () => {
 </ListaDeclaracoes>`;
 
   it("extrai taxaCambio da adição a partir de condicaoVendaTaxaCambio (÷ 100000)", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlComTaxaCambioAdicao });
     const adicoes = result.adicoes as any[];
@@ -770,7 +784,7 @@ describe("GLME - Taxa FOB do campo condicaoVendaTaxaCambio", () => {
   });
 
   it("taxaFOB global usa condicaoVendaTaxaCambio da primeira adição como prioridade", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.di.parsearXML({ xmlContent: xmlComTaxaCambioAdicao });
     // taxaFOB deve ser derivado do campo da adição (5.15960)
@@ -780,7 +794,7 @@ describe("GLME - Taxa FOB do campo condicaoVendaTaxaCambio", () => {
   });
 
   it("taxaFOB usa fallback do informacaoComplementar quando condicaoVendaTaxaCambio ausente", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     // XML sem condicaoVendaTaxaCambio mas com FOB no informacaoComplementar
     const xmlSemTaxaCambio = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -837,7 +851,7 @@ describe("GLME - Fórmula ICMS com Base de Cálculo da Adição", () => {
   });
 
   it("valorAduaneiro extraído do iiBaseCalculo do XML", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     // XML com iiBaseCalculo = 000000000051748 → 517.48
     const xmlComBaseCalculo = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -889,7 +903,7 @@ describe("GLME - Fórmula ICMS com Base de Cálculo da Adição", () => {
   });
 
   it("valorAduaneiro extraído do iiBaseCalculo do XML", async () => {
-    const ctx = createPublicContext();
+    const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const xmlComBaseCalculo = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <ListaDeclaracoes>

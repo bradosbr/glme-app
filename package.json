@@ -7,16 +7,16 @@
     "dev": "cross-env NODE_ENV=development tsx watch server/_core/index.ts",
     "build": "cross-env NODE_ENV=production vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "cross-env NODE_ENV=production node dist/index.js",
+    "build:vercel": "vite build && esbuild server/_core/app.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/server/app.js",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate"
+    "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "db:seed": "tsx server/scripts/seedAdmin.ts",
+    "db:migrar-dados": "tsx server/scripts/migrarMysqlParaPostgres.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.693.0",
-    "@aws-sdk/s3-request-presigner": "^3.693.0",
     "@hookform/resolvers": "^5.2.2",
-    "@peculiar/x509": "^1.14.3",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
@@ -47,10 +47,7 @@
     "@trpc/client": "^11.6.0",
     "@trpc/react-query": "^11.6.0",
     "@trpc/server": "^11.6.0",
-    "@types/multer": "^2.1.0",
-    "@types/pdf-parse": "^1.1.5",
     "@types/xml2js": "^0.4.14",
-    "asn1js": "^3.0.7",
     "axios": "^1.12.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -63,17 +60,13 @@
     "embla-carousel-react": "^8.6.0",
     "express": "^4.21.2",
     "framer-motion": "^12.23.22",
-    "html2canvas": "^1.4.1",
     "input-otp": "^1.4.2",
     "jose": "6.1.0",
     "jspdf": "^4.2.0",
     "lucide-react": "^0.453.0",
-    "multer": "^2.1.1",
-    "mysql2": "^3.15.0",
     "nanoid": "^5.1.5",
     "next-themes": "^0.4.6",
-    "pdf-parse": "^2.4.5",
-    "pkijs": "^3.3.3",
+    "postgres": "^3.4.9",
     "react": "^19.2.1",
     "react-day-picker": "^9.11.1",
     "react-dom": "^19.2.1",
@@ -104,6 +97,8 @@
     "autoprefixer": "^10.4.20",
     "drizzle-kit": "^0.31.4",
     "esbuild": "^0.25.0",
+    "mysql2": "3.20.0",
+    "pdfjs-dist": "5.4.296",
     "pnpm": "^10.15.1",
     "postcss": "^8.4.47",
     "prettier": "^3.6.2",
@@ -121,6 +116,9 @@
     },
     "overrides": {
       "tailwindcss>nanoid": "3.3.7"
-    }
+    },
+    "ignoredOptionalDependencies": [
+      "@napi-rs/canvas"
+    ]
   }
 }

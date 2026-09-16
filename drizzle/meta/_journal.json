@@ -1,26 +1,19 @@
 {
   "version": "7",
-  "dialect": "mysql",
+  "dialect": "postgresql",
   "entries": [
     {
       "idx": 0,
-      "version": "5",
-      "when": 1773671669387,
-      "tag": "0000_sweet_norman_osborn",
+      "version": "7",
+      "when": 1789568351120,
+      "tag": "0000_baseline_postgres",
       "breakpoints": true
     },
     {
       "idx": 1,
-      "version": "5",
-      "when": 1773671729827,
-      "tag": "0001_short_mongu",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "5",
-      "when": 1783620876738,
-      "tag": "0002_nosy_supreme_intelligence",
+      "version": "7",
+      "when": 1789568365650,
+      "tag": "0001_unaccent_e_rls",
       "breakpoints": true
     }
   ]

@@ -1,5 +1,6 @@
-import { eq, like, or } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { eq, ilike, or, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import { InsertUser, users, importadores, recintos, InsertImportador, InsertRecinto } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { hashPassword } from "./password";
@@ -9,7 +10,9 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      // Transaction pooler do Supabase (porta 6543) não suporta prepared statements
+      const client = postgres(process.env.DATABASE_URL, { prepare: false });
+      _db = drizzle(client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -40,7 +43,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     else if (user.openId === ENV.ownerOpenId) { values.role = 'admin'; updateSet.role = 'admin'; }
     if (!values.lastSignedIn) values.lastSignedIn = new Date();
     if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
-    await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+    await db.insert(users).values(values).onConflictDoUpdate({ target: users.openId, set: updateSet });
   } catch (error) { console.error("[Database] Failed to upsert user:", error); throw error; }
 }
 
@@ -154,22 +157,25 @@ export async function touchLastSignedIn(id: number) {
  * Cria o administrador inicial a partir das variáveis de ambiente,
  * caso ainda não exista nenhum admin no banco.
  */
-export async function seedAdmin() {
+export type SeedAdminResultado = "sem-banco" | "ja-existe" | "promovido" | "criado";
+
+export async function seedAdmin(): Promise<SeedAdminResultado> {
   const db = await getDb();
-  if (!db) return;
+  if (!db) return "sem-banco";
   const username = process.env.ADMIN_USERNAME?.trim() || "admin";
   const password = process.env.ADMIN_PASSWORD?.trim() || "admin123";
   const existingAdmins = await db.select().from(users).where(eq(users.role, "admin")).limit(1);
-  if (existingAdmins.length > 0) return;
+  if (existingAdmins.length > 0) return "ja-existe";
   const existing = await getUserByUsername(username);
   if (existing) {
     // Promove usuário existente a admin
     await db.update(users).set({ role: "admin", active: true }).where(eq(users.id, existing.id));
     console.log(`[DB] Usuário '${username}' promovido a admin`);
-    return;
+    return "promovido";
   }
   await createLocalUser({ username, password, name: "Administrador", role: "admin" });
   console.log(`[DB] Administrador inicial '${username}' criado`);
+  return "criado";
 }
 
 // ===== IMPORTADORES =====
@@ -221,9 +227,11 @@ export async function searchImportadores(query: string) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(importadores)
+    // O MySQL (utf8mb4_unicode_ci) ignorava maiúsculas e acentos no LIKE; no Postgres
+    // isso exige ILIKE + unaccent (extensão criada na migração, schema "extensions")
     .where(or(
-      like(importadores.razaoSocial, `%${query}%`),
-      like(importadores.cnpj, `%${query}%`)
+      sql`extensions.unaccent(${importadores.razaoSocial}) ILIKE extensions.unaccent(${`%${query}%`})`,
+      ilike(importadores.cnpj, `%${query}%`)
     ))
     .limit(20);
 }
@@ -306,7 +314,8 @@ export async function seedRecintos() {
   ];
 
   for (const recinto of dadosRecintos) {
-    await db.insert(recintos).values(recinto).onDuplicateKeyUpdate({
+    await db.insert(recintos).values(recinto).onConflictDoUpdate({
+      target: recintos.codigo,
       set: { nome: recinto.nome, cidade: recinto.cidade, uf: recinto.uf }
     });
   }

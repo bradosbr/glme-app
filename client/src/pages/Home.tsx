@@ -1,5 +1,6 @@
 ﻿import { useState, useRef, useCallback } from "react";
 import { gerarGLMEPDF } from "@/lib/glmePDF";
+import { extrairTextoPDF } from "@/lib/extrairTextoPDF";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,6 +113,7 @@ export default function Home() {
   const [duimpClientId, setDuimpClientId] = useState("");
   const [duimpClientSecret, setDuimpClientSecret] = useState("");
   const duimpFileInputRef = useRef<HTMLInputElement>(null);
+  const [extraindoTextoPDF, setExtraindoTextoPDF] = useState(false);
 
   const parsearDuimpPDFMutation = trpc.duimp.parsearPDF.useMutation({
     onSuccess: async (result: any) => {
@@ -268,13 +270,16 @@ export default function Home() {
       if (duimpFileInputRef.current) duimpFileInputRef.current.value = "";
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const base64 = (e.target?.result as string).split(",")[1];
-      parsearDuimpPDFMutation.mutate({ pdfBase64: base64 });
-    };
-    reader.readAsDataURL(file);
     if (duimpFileInputRef.current) duimpFileInputRef.current.value = "";
+    // O texto é extraído no navegador; o servidor recebe apenas o texto
+    setExtraindoTextoPDF(true);
+    extrairTextoPDF(file)
+      .then((texto) => parsearDuimpPDFMutation.mutate({ texto }))
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast.error(`Erro ao processar PDF: ${msg}`);
+      })
+      .finally(() => setExtraindoTextoPDF(false));
   };
 
   // ===== PARSER DI XML =====
@@ -1377,9 +1382,9 @@ export default function Home() {
                 variant="outline"
                 className="w-full gap-2 border-dashed border-2 h-20 text-slate-600 hover:border-blue-400 hover:text-blue-600"
                 onClick={() => duimpFileInputRef.current?.click()}
-                disabled={parsearDuimpPDFMutation.isPending}
+                disabled={extraindoTextoPDF || parsearDuimpPDFMutation.isPending}
               >
-                {parsearDuimpPDFMutation.isPending ? (
+                {extraindoTextoPDF || parsearDuimpPDFMutation.isPending ? (
                   <><Loader2 className="w-5 h-5 animate-spin" /> Processando PDF...</>
                 ) : (
                   <><Upload className="w-5 h-5" /> Clique para selecionar o PDF da DUIMP</>
