@@ -4,7 +4,7 @@ Formulário web para geração de **GLME (Guia de Liberação de Mercadoria Estr
 - **DI (Declaração de Importação)** via XML exportado do SISCOMEX
 - **DUIMP** via upload de PDF ou API do Portal Único (autenticação clientId/clientSecret)
 
-Produção: https://glme-app.vercel.app — domínio próprio `glme.brados.com.br` (DNS no Registro.br, apontando para o Vercel via CNAME)
+Produção: https://glme-app.vercel.app — domínio próprio `glme.brados.app.br` (DNS no Registro.br, apontando para o Vercel via CNAME)
 
 ## Stack
 
