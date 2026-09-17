@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { gerarGLMEPDF } from "@/lib/glmePDF";
 import { extrairTextoPDF } from "@/lib/extrairTextoPDF";
 import { Button } from "@/components/ui/button";
@@ -66,7 +66,7 @@ const reais = (v: string | undefined) =>
   parseFloat(v || "0").toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Destaca na navegação a seção visível na tela. */
-function useSecaoAtiva(ids: readonly string[]) {
+function useSecaoAtiva(ids: readonly string[], alturaFixa: number) {
   const [ativa, setAtiva] = useState<string>(ids[0]);
   useEffect(() => {
     const observador = new IntersectionObserver(
@@ -74,14 +74,14 @@ function useSecaoAtiva(ids: readonly string[]) {
         const visivel = entradas.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
         if (visivel) setAtiva(visivel.target.id);
       },
-      { rootMargin: "-120px 0px -55% 0px" },
+      { rootMargin: `-${alturaFixa + 8}px 0px -55% 0px` },
     );
     ids.forEach((id) => {
       const el = document.getElementById(id);
       if (el) observador.observe(el);
     });
     return () => observador.disconnect();
-  }, [ids]);
+  }, [ids, alturaFixa]);
   return ativa;
 }
 
@@ -126,7 +126,27 @@ export default function Home() {
     resetForm,
   } = useGLMEForm();
 
-  const secaoAtiva = useSecaoAtiva(IDS_SECOES);
+  // Cabeçalho e barra de ações ficam fixos: a altura real vira variável CSS,
+  // usada no deslocamento das âncoras e no observador de seção ativa.
+  const cabecalhoRef = useRef<HTMLElement>(null);
+  const acoesRef = useRef<HTMLDivElement>(null);
+  const [alturaFixa, setAlturaFixa] = useState(160);
+  useEffect(() => {
+    const medir = () => {
+      // O cabeçalho já inclui a navegação e a barra de ações fixas.
+      const cabecalho = cabecalhoRef.current?.offsetHeight ?? 0;
+      const raiz = document.documentElement.style;
+      raiz.setProperty("--altura-cabecalho", `${cabecalho}px`);
+      raiz.setProperty("--deslocamento-ancora", `${cabecalho + 16}px`);
+      setAlturaFixa(cabecalho);
+    };
+    medir();
+    const observador = new ResizeObserver(medir);
+    if (cabecalhoRef.current) observador.observe(cabecalhoRef.current);
+    if (acoesRef.current) observador.observe(acoesRef.current);
+    return () => observador.disconnect();
+  }, []);
+  const secaoAtiva = useSecaoAtiva(IDS_SECOES, alturaFixa);
   // No celular a barra de seções rola na horizontal: mantém a seção ativa visível
   useEffect(() => {
     const link = document.querySelector<HTMLElement>(`[data-secao-nav="${secaoAtiva}"]`);
@@ -141,7 +161,7 @@ export default function Home() {
   const [confirmarLimpeza, setConfirmarLimpeza] = useState(false);
 
   // ===== Adquirente igual ao Importador =====
-  const [adquirenteIgualImportador, setAdquirenteIgualImportador] = useState(false);
+  const [adquirenteIgualImportador, setAdquirenteIgualImportador] = useState(true);
 
   // ===== CNPJ =====
   const [cnpjBusca, setCnpjBusca] = useState("");
@@ -280,8 +300,12 @@ export default function Home() {
       if (dados.importadorMunicipio) { updateImportador("municipio", dados.importadorMunicipio); preenchidos++; }
       if (dados.importadorUf) { updateImportador("uf", dados.importadorUf); preenchidos++; }
     }
-    if (dados.adquirenteNome) { updateAdquirente("nome", dados.adquirenteNome); preenchidos++; }
-    if (dados.adquirenteCnpj) { updateAdquirente("cnpj", dados.adquirenteCnpj); preenchidos++; }
+    if (dados.adquirenteNome || dados.adquirenteCnpj) {
+      // A declaração trouxe adquirente próprio (importação por conta e ordem / encomenda).
+      setAdquirenteIgualImportador(false);
+      if (dados.adquirenteNome) { updateAdquirente("nome", dados.adquirenteNome); preenchidos++; }
+      if (dados.adquirenteCnpj) { updateAdquirente("cnpj", dados.adquirenteCnpj); preenchidos++; }
+    }
 
     // === DECLARAÇÃO ===
     const tiposAtuais: string[] = formData.documento.tipo || [];
@@ -637,7 +661,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background">
       {/* ===== Cabeçalho fixo com navegação por seções ===== */}
-      <header className="sticky top-0 z-40 border-b bg-card/90 backdrop-blur supports-[backdrop-filter]:bg-card/75">
+      <header ref={cabecalhoRef} className="sticky top-0 z-40 border-b bg-card/90 backdrop-blur supports-[backdrop-filter]:bg-card/75">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-3 px-4">
           <a href="#topo" className="flex min-w-0 items-center gap-3">
             <img src="/logo-bigfish.png" alt="Bigfish" className="size-10 shrink-0 rounded-xl" />
@@ -683,6 +707,14 @@ export default function Home() {
             ))}
           </ul>
         </nav>
+        <div ref={acoesRef} className="mx-auto max-w-5xl px-4 pb-3">
+          <div className="grid grid-cols-4 gap-2 sm:gap-3">
+              <BlocoAcao icone={Upload} titulo="Importar DI / DUIMP" rotuloCurto="Importar" subtitulo="XML da DI ou PDF da DUIMP" variante="principal" carregando={importando} onClick={() => setShowImportar(true)} />
+              <BlocoAcao icone={FileDown} titulo="Gerar guia em PDF" rotuloCurto="Gerar PDF" subtitulo="Formulário oficial" carregando={gerandoPDF} onClick={handleGerarPDF} />
+              <BlocoAcao icone={Building2} titulo="Importadores" rotuloCurto="Cadastro" subtitulo="Cadastro e edital DBF" onClick={() => setShowCadastro(true)} />
+              <BlocoAcao icone={Eraser} titulo="Limpar formulário" rotuloCurto="Limpar" subtitulo="Começar uma nova guia" variante="perigo" onClick={() => setConfirmarLimpeza(true)} />
+            </div>
+          </div>
       </header>
 
       <main id="topo" className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:py-8">
@@ -693,12 +725,6 @@ export default function Home() {
             <p className="mt-1 text-sm text-muted-foreground">
               Importe a declaração, confira os dados e gere a guia oficial. O rascunho fica salvo neste navegador.
             </p>
-          </div>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <BlocoAcao icone={Upload} titulo="Importar DI / DUIMP" subtitulo="XML da DI ou PDF da DUIMP" variante="principal" carregando={importando} onClick={() => setShowImportar(true)} />
-            <BlocoAcao icone={FileDown} titulo="Gerar guia em PDF" subtitulo="Formulário oficial" carregando={gerandoPDF} onClick={handleGerarPDF} />
-            <BlocoAcao icone={Building2} titulo="Importadores" subtitulo="Cadastro e edital DBF" onClick={() => setShowCadastro(true)} />
-            <BlocoAcao icone={Eraser} titulo="Limpar formulário" subtitulo="Começar uma nova guia" variante="perigo" onClick={() => setConfirmarLimpeza(true)} />
           </div>
         </div>
 
@@ -999,7 +1025,11 @@ export default function Home() {
           </div>
         </Secao>
 
-        <footer className="pb-4 text-center text-xs text-muted-foreground">Bigfish · GLME</footer>
+        <footer className="pb-4 text-center text-xs leading-relaxed text-muted-foreground">
+          Desenvolvido por: Brados Consultoria e Tecnologia Ltda
+          <span className="hidden sm:inline"> · </span><br className="sm:hidden" />
+          Todos os direitos reservados · 2023 - 2026
+        </footer>
       </main>
 
       {/* ===== Importar DI / DUIMP ===== */}

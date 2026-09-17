@@ -13,7 +13,7 @@ interface SecaoProps {
 /** Bloco de conteúdo da página única, com âncora para a navegação. */
 export function Secao({ id, icone: Icone, titulo, descricao, acoes, children }: SecaoProps) {
   return (
-    <section id={id} className="scroll-mt-32 rounded-2xl border bg-card p-5 shadow-[0_1px_2px_rgba(16,50,98,0.04)] sm:p-6">
+    <section id={id} className="scroll-mt-[var(--deslocamento-ancora,10rem)] rounded-2xl border bg-card p-5 shadow-[0_1px_2px_rgba(16,50,98,0.04)] sm:p-6">
       <header className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-sky-soft text-brand-navy">

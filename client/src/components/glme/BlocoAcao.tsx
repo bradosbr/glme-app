@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 interface BlocoAcaoProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icone: LucideIcon;
   titulo: string;
+  /** Rótulo usado na barra compacta do celular; sem ele, usa o título. */
+  rotuloCurto?: string;
   subtitulo?: string;
   variante?: "principal" | "padrao" | "perigo";
   carregando?: boolean;
@@ -18,7 +20,7 @@ const estilos = {
 
 /** Botão em bloco com ícone, usado na barra de ações principal. */
 export const BlocoAcao = forwardRef<HTMLButtonElement, BlocoAcaoProps>(function BlocoAcao(
-  { icone: Icone, titulo, subtitulo, variante = "padrao", carregando, className, disabled, ...props },
+  { icone: Icone, titulo, rotuloCurto, subtitulo, variante = "padrao", carregando, className, disabled, ...props },
   ref,
 ) {
   return (
@@ -27,7 +29,10 @@ export const BlocoAcao = forwardRef<HTMLButtonElement, BlocoAcaoProps>(function 
       type="button"
       disabled={disabled || carregando}
       className={cn(
-        "group flex min-h-[92px] w-full flex-col items-start justify-between gap-3 rounded-2xl border p-4 text-left transition-colors",
+        "group flex w-full items-center rounded-2xl border transition-colors",
+        // Barra fixa: ícone acima do rótulo no celular, lado a lado a partir de sm
+        "flex-col justify-center gap-1 p-2 text-center",
+        "sm:flex-row sm:justify-start sm:gap-2.5 sm:px-3 sm:py-2.5 sm:text-left",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         "disabled:cursor-not-allowed disabled:opacity-60",
         estilos[variante],
@@ -35,12 +40,13 @@ export const BlocoAcao = forwardRef<HTMLButtonElement, BlocoAcaoProps>(function 
       )}
       {...props}
     >
-      <span className="bloco-icone flex size-9 items-center justify-center rounded-xl">
+      <span className="bloco-icone flex size-8 items-center justify-center rounded-xl sm:size-9">
         {carregando ? <Loader2 className="size-[18px] animate-spin" /> : <Icone className="size-[18px]" strokeWidth={2} />}
       </span>
-      <span>
-        <span className="block text-sm font-semibold leading-tight">{titulo}</span>
-        {subtitulo && <span className="bloco-sub mt-0.5 block text-xs leading-snug">{subtitulo}</span>}
+      <span className="min-w-0">
+        <span className="block text-[11px] font-semibold leading-tight sm:hidden">{rotuloCurto ?? titulo}</span>
+        <span className="hidden text-sm font-semibold leading-tight sm:block">{titulo}</span>
+        {subtitulo && <span className="bloco-sub mt-0.5 hidden text-xs leading-snug sm:block">{subtitulo}</span>}
       </span>
     </button>
   );
