@@ -50,6 +50,11 @@ function mapearDuimpAPIParaGLME(data: Record<string, unknown>): DuimpParsedData 
     numero: String(idx + 1),
     ncm: get(item, "ncm", "codigoNcm") ?? "",
     descricao: get(item, "descricao", "descricaoMercadoria") ?? "",
+    // Na API cada item vira uma adição: o próprio item é o único da lista
+    itens: [{
+      numero: get(item, "numeroItem", "numero") ?? String(idx + 1),
+      descricao: get(item, "descricao", "descricaoMercadoria") ?? "",
+    }],
     quantidade: get(item, "quantidade", "quantidadeEstatistica"),
     valorFOB: get(item, "valorFob", "valorFOB"),
     baseCalculo: get(item, "baseCalculoII", "baseCalculo"),

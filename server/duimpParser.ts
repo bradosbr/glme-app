@@ -46,10 +46,18 @@ export interface DuimpParsedData {
   adicoes?: DuimpAdicao[];
 }
 
+/** Item da DUIMP que compõe uma adição (consolidada por NCM). */
+export interface DuimpItem {
+  numero: string;
+  descricao: string;
+}
+
 export interface DuimpAdicao {
   numero: string;
   ncm: string;
   descricao: string;
+  /** Itens da DUIMP que pertencem a esta adição, na ordem do extrato. */
+  itens?: DuimpItem[];
   baseCalculo?: string;
   ii?: string;
   ipi?: string;
@@ -257,18 +265,21 @@ function itensDoExtratoCompleto(texto: string): DuimpAdicao[] {
 /**
  * Consolida NCMs duplicadas em uma única adição, renumerando sequencialmente.
  * Descrições de NCMs repetidas são unidas com " / ".
+ * Cada adição guarda em `itens` os itens da DUIMP que a compõem.
  */
 function consolidarPorNCM(lista: DuimpAdicao[]): DuimpAdicao[] {
   const mapa = new Map<string, DuimpAdicao>();
   let seq = 1;
   for (const item of lista) {
+    const itemDaDuimp: DuimpItem = { numero: item.numero, descricao: item.descricao };
     if (mapa.has(item.ncm)) {
       const ex = mapa.get(item.ncm)!;
       if (item.descricao && !ex.descricao.includes(item.descricao)) {
         ex.descricao += ` / ${item.descricao}`;
       }
+      ex.itens!.push(itemDaDuimp);
     } else {
-      mapa.set(item.ncm, { ...item, numero: String(seq++) });
+      mapa.set(item.ncm, { ...item, numero: String(seq++), itens: [itemDaDuimp] });
     }
   }
   return Array.from(mapa.values());

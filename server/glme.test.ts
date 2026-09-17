@@ -959,3 +959,44 @@ describe("GLME - Parser DUIMP PDF", () => {
     expect(resultado.valorAduaneiro).toBe("48330.56");
   });
 });
+
+describe("GLME - DUIMP: itens de cada adição", () => {
+  // Formato "Extrato Completo": itens separados por "Item N"
+  const extrato = [
+    "Extrato DUIMP: 26BR0000000001-0 / Versão 1",
+    "Item 1",
+    "NCM:",
+    "8471.30.12 - Máquinas automáticas para processamento de dados",
+    "Código do Produto:",
+    "10 - NOTEBOOK 14 POLEGADAS",
+    "Item 2",
+    "NCM:",
+    "2208.40.00 - Aguardente de cana",
+    "Código do Produto:",
+    "20 - CACHACA ENVELHECIDA",
+    "Item 3",
+    "NCM:",
+    "8471.30.12 - Máquinas automáticas para processamento de dados",
+    "Código do Produto:",
+    "30 - NOTEBOOK 16 POLEGADAS",
+    "",
+  ].join("\n");
+
+  it("consolida por NCM mantendo a lista de itens de cada adição", () => {
+    const r = parsearDuimpPDF(extrato);
+    expect(r.adicoes).toHaveLength(2);
+    expect(r.adicoes![0].ncm).toBe("84713012");
+    expect(r.adicoes![0].itens).toEqual([
+      { numero: "1", descricao: "NOTEBOOK 14 POLEGADAS" },
+      { numero: "3", descricao: "NOTEBOOK 16 POLEGADAS" },
+    ]);
+    expect(r.adicoes![1].ncm).toBe("22084000");
+    expect(r.adicoes![1].itens).toEqual([{ numero: "2", descricao: "CACHACA ENVELHECIDA" }]);
+  });
+
+  it("mantém numeração sequencial e descrição unida das adições (compatibilidade)", () => {
+    const r = parsearDuimpPDF(extrato);
+    expect(r.adicoes!.map((a) => a.numero)).toEqual(["1", "2"]);
+    expect(r.adicoes![0].descricao).toBe("NOTEBOOK 14 POLEGADAS / NOTEBOOK 16 POLEGADAS");
+  });
+});
