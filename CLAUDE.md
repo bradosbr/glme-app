@@ -66,6 +66,44 @@ vercel.json                 # Build, estáticos, região, maxDuration e fallback
 Na connection string, substitua `[YOUR-PASSWORD]` **inclusive os colchetes** pela senha.
 Senha entre colchetes gera `password authentication failed` no pooler.
 
+## Versões e ambientes
+
+| Ambiente | Branch | Onde roda | Banco (Supabase) |
+|---|---|---|---|
+| **Produção** | `master` | https://glme-app.vercel.app | `GLME` (ref `eokfulfwpywxapexwsbt`) |
+| **Desenvolvimento** | `develop` e `feature/*` | Preview do Vercel (exige login no Vercel) e `pnpm dev` local | `GLME-dev` (ref `uolfnxelzznrwohbxieg`) |
+
+- **Nunca commite direto na `master`**: todo push nela publica em produção.
+- O `GLME-dev` tem a mesma estrutura da produção, os 52 recintos e só um admin de teste — nenhum dado real.
+- O `.env` local e as variáveis de **Preview** do Vercel devem apontar para o `GLME-dev`.
+- Versões seguem SemVer e são marcadas com tag `vX.Y.Z` na `master` (`v1.0.0` = primeira versão no Vercel).
+
+### Fluxo de trabalho
+
+1. Trabalhe na `develop`. Mudanças grandes: `feature/<nome>` saindo da `develop`, com merge de volta nela.
+2. Acompanhe pelo preview da `develop` ou localmente.
+3. Mudou o schema? `pnpm drizzle-kit generate` e aplique **primeiro no `GLME-dev`** (`pnpm db:push` com `DIRECT_URL` do dev).
+
+### Migrações compatíveis (produção continua no ar)
+
+A migração vai para a produção **antes** do código novo, então a versão antiga precisa continuar funcionando com o banco já migrado:
+
+- **Pode** numa versão: criar tabela, adicionar coluna **nula ou com default**, criar índice.
+- **Não pode** na mesma versão: remover/renomear coluna ou tabela, tornar coluna `NOT NULL` sem default, mudar tipo.
+- Para remover ou renomear: adicione o novo em uma versão, migre o código, e remova o antigo **na versão seguinte**.
+
+### Publicar uma versão
+
+1. Na `develop`: atualize `version` no `package.json` (estrutural/incompatível = MAJOR, funcionalidade = MINOR, correção = PATCH), rode `pnpm check` e `pnpm test`.
+2. Aplique as migrações pendentes **na produção** (`pnpm db:push` com `DIRECT_URL` da produção).
+3. Merge `develop` → `master`, tag `vX.Y.Z` e push da `master` e da tag. O Vercel publica sozinho.
+4. Confira https://glme-app.vercel.app (login, recintos, busca de importadores).
+
+### Voltar atrás
+
+- **Código**: Vercel → Deployments → deploy anterior → **Instant Rollback** (segundos). Depois, `git revert` na `master`.
+- **Banco**: migrações não são desfeitas automaticamente — por isso a regra de compatibilidade acima.
+
 ## Deploy (Vercel)
 
 - Push na `master` publica em produção automaticamente (build: `pnpm run build:vercel`).
