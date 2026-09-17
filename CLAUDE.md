@@ -21,7 +21,9 @@ api/trpc/
   [trpc].js                 # Função serverless: toda a API tRPC (/api/trpc/*)
   duimp.consultarAPI.js     # Mesma API, função separada com maxDuration 60s (Portal Único)
 client/src/
-  pages/Home.tsx            # Página principal com o formulário GLME
+  pages/Home.tsx            # Página única com o formulário GLME
+  components/glme/          # Seção, blocos de ação, diálogo DI/DUIMP, situação fiscal da adição
+  lib/aliquotasICMS.ts      # Anexo I (PE) e consulta hierárquica de alíquota por NCM
   lib/extrairTextoPDF.ts    # Extração de texto do PDF da DUIMP no navegador (pdfjs-dist)
   components/               # Componentes UI (shadcn + customizados)
 server/
@@ -139,7 +141,9 @@ A migração vai para a produção **antes** do código novo, então a versão a
 
 ## Funcionalidades principais
 
-- Formulário GLME com 5 abas: Estado de Recolhimento, Importador/Adquirente, Dados da Declaração, Adições, ICMS
+- Formulário GLME em página única com navegação por âncoras: UF de recolhimento, Importador, Adquirente, Declaração, Adições / itens, ICMS
+- Importação unificada **DI / DUIMP**: `.xml` vai para o parser da DI, `.pdf` para o da DUIMP (API do Portal Único como opção secundária)
+- Cada adição mostra a alíquota de recolhimento (`consultarAliquotaNCM`: a regra mais específica do Anexo I vence — NCM, subitem, subposição, posição ou capítulo — senão 20,5%) e os itens da DUIMP que a compõem
 - Importação XML de DI: extrai importador, adições (NCM, impostos), dados da declaração, calcula ICMS
 - Importação DUIMP: via PDF (extraído no navegador) ou API Portal Único
 - Filtragem pela lista negativa do Edital 060/2025 (NCMs com tributação normal vs diferimento)
@@ -147,7 +151,7 @@ A migração vai para a produção **antes** do código novo, então a versão a
 - Geração de PDF com layout oficial da GLME (jsPDF, no navegador)
 - Cadastro de importadores com busca por CNPJ (BrasilAPI / ReceitaWS)
 - Login local (usuário/senha, scrypt) e administração de usuários
-- 52 testes automatizados (vitest)
+- 66 testes automatizados (vitest)
 
 ## Comandos
 

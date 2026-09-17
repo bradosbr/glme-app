@@ -131,7 +131,7 @@ export default function Usuarios() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 md:p-6">
+    <div className="min-h-screen bg-background p-4 md:p-6">
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
           <div>
@@ -141,10 +141,10 @@ export default function Usuarios() {
                 Voltar
               </Button>
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 mt-1">Usuários</h1>
-            <p className="text-slate-500 text-sm">Gerencie o acesso ao sistema</p>
+            <h1 className="text-2xl font-bold text-brand-navy mt-1">Usuários</h1>
+            <p className="text-muted-foreground text-sm">Gerencie o acesso ao sistema</p>
           </div>
-          <Button className="gap-2 bg-blue-700 hover:bg-blue-800" onClick={() => setShowCriar(true)}>
+          <Button className="gap-2" onClick={() => setShowCriar(true)}>
             <UserPlus className="w-4 h-4" />
             Novo usuário
           </Button>
@@ -152,7 +152,7 @@ export default function Usuarios() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base text-slate-700">
+            <CardTitle className="text-base text-foreground">
               {usuariosQuery.isLoading ? "Carregando..." : `${usuarios.length} usuário(s)`}
             </CardTitle>
           </CardHeader>
@@ -186,15 +186,15 @@ export default function Usuarios() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="text-slate-600">{u.name}</TableCell>
-                        <TableCell className="text-slate-600">{u.email || "—"}</TableCell>
+                        <TableCell className="text-muted-foreground">{u.name}</TableCell>
+                        <TableCell className="text-muted-foreground">{u.email || "—"}</TableCell>
                         <TableCell>
                           <Badge variant={u.role === "admin" ? "default" : "outline"}>
                             {u.role === "admin" ? "Admin" : "Usuário"}
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={u.active ? "secondary" : "outline"} className={u.active ? "text-green-700" : "text-slate-400"}>
+                          <Badge variant={u.active ? "secondary" : "outline"} className={u.active ? "text-green-700" : "text-muted-foreground"}>
                             {u.active ? "Ativo" : "Inativo"}
                           </Badge>
                         </TableCell>
@@ -248,7 +248,7 @@ export default function Usuarios() {
                   })}
                   {!usuariosQuery.isLoading && usuarios.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-slate-400 py-8">
+                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                         Nenhum usuário cadastrado.
                       </TableCell>
                     </TableRow>
@@ -298,7 +298,7 @@ export default function Usuarios() {
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShowCriar(false)}>Cancelar</Button>
-              <Button type="submit" className="gap-2 bg-blue-700 hover:bg-blue-800" disabled={criarMutation.isPending}>
+              <Button type="submit" className="gap-2" disabled={criarMutation.isPending}>
                 {criarMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                 Criar
               </Button>
@@ -323,7 +323,7 @@ export default function Usuarios() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setResetTarget(null)}>Cancelar</Button>
             <Button
-              className="gap-2 bg-blue-700 hover:bg-blue-800"
+              className="gap-2"
               disabled={resetMutation.isPending || novaSenha.length < 6}
               onClick={() => resetTarget && resetMutation.mutate({ id: resetTarget.id, password: novaSenha })}
             >

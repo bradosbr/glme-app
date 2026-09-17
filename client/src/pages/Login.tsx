@@ -4,7 +4,6 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Lock, User } from "lucide-react";
 import { toast } from "sonner";
 import { TRPCClientError } from "@trpc/client";
@@ -33,76 +32,64 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">GLME</h1>
-          <p className="text-slate-500 text-sm">
-            Guia para Liberação de Mercadoria Estrangeira
-          </p>
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <div className="w-full max-w-sm">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <img src="/logo-bigfish.png" alt="Bigfish" className="mb-4 size-16 rounded-2xl shadow-sm" />
+          <h1 className="text-2xl font-semibold tracking-tight text-brand-navy">GLME</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Guia de Liberação de Mercadoria Estrangeira</p>
         </div>
 
-        <Card className="shadow-lg border-slate-200">
-          <CardHeader>
-            <CardTitle className="text-lg text-slate-800">Acessar o sistema</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="username">Usuário</Label>
-                <div className="relative">
-                  <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <Input
-                    id="username"
-                    autoFocus
-                    autoComplete="username"
-                    value={username}
-                    onChange={e => setUsername(e.target.value)}
-                    placeholder="seu.usuario"
-                    className="pl-9"
-                  />
-                </div>
+        <div className="rounded-2xl border bg-card p-6 shadow-[0_1px_2px_rgba(16,50,98,0.04)]">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="username" className="text-[13px] font-medium text-muted-foreground">Usuário</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="username"
+                  autoFocus
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                  placeholder="seu.usuario"
+                  className="h-10 pl-9"
+                />
               </div>
+            </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="password">Senha</Label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <Input
-                    id="password"
-                    type="password"
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="pl-9"
-                  />
-                </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="password" className="text-[13px] font-medium text-muted-foreground">Senha</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="h-10 pl-9"
+                />
               </div>
+            </div>
 
-              <Button
-                type="submit"
-                className="w-full gap-2 bg-blue-700 hover:bg-blue-800"
-                disabled={loginPending}
-              >
-                {loginPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                Entrar
-              </Button>
+            <Button type="submit" size="lg" className="w-full" disabled={loginPending}>
+              {loginPending && <Loader2 className="animate-spin" />}
+              Entrar
+            </Button>
 
-              <div className="text-center">
-                <Link
-                  href="/esqueci-senha"
-                  className="text-sm text-blue-700 hover:underline"
-                >
-                  Esqueci minha senha
-                </Link>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+            <div className="text-center">
+              <Link href="/esqueci-senha" className="text-sm text-brand-sky hover:underline">
+                Esqueci minha senha
+              </Link>
+            </div>
+          </form>
+        </div>
 
-        <p className="text-center text-xs text-slate-400 mt-4">
-          Acesso restrito · Novos usuários são cadastrados pelo administrador
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          Acesso restrito · novos usuários são cadastrados pelo administrador
         </p>
       </div>
     </div>

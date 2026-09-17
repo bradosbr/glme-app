@@ -1,6 +1,37 @@
 import { useState, useCallback, useEffect } from "react";
 import { useLocalStorage } from "./useLocalStorage";
 
+/** Item da DUIMP que compõe uma adição. */
+export interface ItemAdicao {
+  numero: string;
+  descricao: string;
+}
+
+export interface ProdutoAdicao {
+  adicao: string;
+  classeTarifaria: string;
+  ncm: string;
+  tratamento: string;
+  fundamentoLegal: string;
+  valor: string;
+  descricao?: string;
+  valorAduaneiro?: string;
+  itens?: ItemAdicao[];
+}
+
+/**
+ * Adição com tributação normal (NCM na lista negativa): recolhimento integral,
+ * não entra na GLME. Guardada só para exibição na seção de adições.
+ */
+export interface AdicaoTributada {
+  adicao: string;
+  ncm: string;
+  descricao?: string;
+  itens?: ItemAdicao[];
+  /** Valor do ICMS calculado, quando a declaração traz a base da adição (DI). */
+  valorICMS?: number;
+}
+
 export interface FormData {
   // Seção 1 - Secretaria da Fazenda
   secretariaUF: string;
@@ -50,15 +81,11 @@ export interface FormData {
   // Seção 4.3 e 5.5 - Valor CIF (sincronizado)
   valorCIFAdicion: string;
 
-  // Seção 5 - Produtos sem recolhimento do ICMS
-  produtos: Array<{
-    adicao: string;
-    classeTarifaria: string;
-    ncm: string;
-    tratamento: string;
-    fundamentoLegal: string;
-    valor: string;
-  }>;
+  // Seção 5 - Adições com diferimento (constam na GLME)
+  produtos: ProdutoAdicao[];
+
+  // Adições com tributação normal (lista negativa) — fora da GLME
+  adicoesTributadas?: AdicaoTributada[];
 
   // Seção 5.4 - Cálculos de ICMS
   icmsCalculo: {
@@ -68,6 +95,7 @@ export interface FormData {
     vt: string; // VT = Valor CIF + Impostos
     vti: string; // VTI = VT / 0,795
     vf: string; // VF = VTI * 20,5%
+    textoAdicional?: string;
   };
 }
 
@@ -240,6 +268,15 @@ export function useGLMEForm() {
     }));
   }, []);
 
+  /** Substitui todas as adições de uma vez (importação de DI/DUIMP). */
+  const substituirAdicoes = useCallback((produtos: ProdutoAdicao[], tributadas: AdicaoTributada[]) => {
+    setFormData((prev) => ({
+      ...prev,
+      produtos: produtos.length > 0 ? produtos : initialFormData.produtos,
+      adicoesTributadas: tributadas,
+    }));
+  }, []);
+
   const resetForm = useCallback(() => {
     setFormData(initialFormData);
     clearStoredFormData();
@@ -275,6 +312,7 @@ export function useGLMEForm() {
     updateICMSCalculo,
     addProduto,
     removeProduto,
+    substituirAdicoes,
     resetForm,
     exportarJSON,
     importarJSON,
