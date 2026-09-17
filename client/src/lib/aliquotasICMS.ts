@@ -66,30 +66,74 @@ export const ALIQUOTAS_ICMS_PE: AliquotaNCM[] = [
   { item: "5", ncm: "2203.00.00", descricao: "Cerveja acondicionada em embalagem retornável com no mínimo 20% de fécula de mandioca", aliquota: 18 },
 ];
 
+/** Alíquota aplicada quando a NCM não tem regra no Anexo I. */
+export const ALIQUOTA_PADRAO = 20.5;
+
+export type NivelNCM = "ncm" | "subitem" | "subposicao" | "posicao" | "capitulo";
+
+export interface ConsultaAliquota {
+  /** Alíquota a considerar, em % (regra mais específica ou a padrão). */
+  aliquota: number;
+  /** "anexo" quando há regra no Anexo I; "padrao" quando não há. */
+  origem: "anexo" | "padrao";
+  /** Regra aplicada (a mais específica), quando houver. */
+  regra: AliquotaNCM | null;
+  /** Nível em que a regra casou (capítulo, posição, ..., NCM completa). */
+  nivel: NivelNCM | null;
+  /**
+   * Outras regras igualmente específicas com alíquota diferente
+   * (ex.: 2207 = bebidas 27% ou AEHC 15,52%): a alíquota depende da mercadoria.
+   */
+  alternativas: AliquotaNCM[];
+}
+
+function nivelPorDigitos(digitos: number): NivelNCM {
+  if (digitos >= 8) return "ncm";
+  if (digitos === 7) return "subitem";
+  if (digitos >= 5) return "subposicao";
+  if (digitos >= 4) return "posicao";
+  return "capitulo";
+}
+
 /**
- * Verifica se uma NCM está na lista de tributação normal (FECEP)
- * Retorna a alíquota correspondente ou null se não estiver na lista
+ * Consulta a alíquota de ICMS de uma NCM no Anexo I, sempre pela NCM completa.
+ *
+ * Uma regra casa quando a NCM COMEÇA com o código da regra (capítulo "22",
+ * posição "2208", subposição "3923.2", NCM completa "2208.40.00"...).
+ * Entre as regras que casam, vence a MAIS ESPECÍFICA (mais dígitos): assim
+ * 2208.40.00 (aguardente) fica com 22,5% e não com os 27% da posição 2208.
+ */
+export function consultarAliquotaNCM(ncm: string): ConsultaAliquota {
+  const padrao: ConsultaAliquota = {
+    aliquota: ALIQUOTA_PADRAO, origem: "padrao", regra: null, nivel: null, alternativas: [],
+  };
+  const ncmLimpo = (ncm || "").replace(/\D/g, "");
+  if (ncmLimpo.length < 2) return padrao;
+
+  const candidatas = ALIQUOTAS_ICMS_PE
+    .map((regra) => ({ regra, codigo: regra.ncm.replace(/\D/g, "") }))
+    .filter(({ codigo }) => codigo.length >= 2 && ncmLimpo.startsWith(codigo));
+  if (candidatas.length === 0) return padrao;
+
+  const maisDigitos = Math.max(...candidatas.map((c) => c.codigo.length));
+  const maisEspecificas = candidatas.filter((c) => c.codigo.length === maisDigitos).map((c) => c.regra);
+  const [regra, ...demais] = maisEspecificas;
+
+  return {
+    aliquota: regra.aliquota,
+    origem: "anexo",
+    regra,
+    nivel: nivelPorDigitos(maisDigitos),
+    alternativas: demais.filter((r) => r.aliquota !== regra.aliquota),
+  };
+}
+
+/**
+ * Compatibilidade: devolve a regra do Anexo I aplicável à NCM, ou null.
+ * Prefira consultarAliquotaNCM, que informa origem, nível e alternativas.
  */
 export function verificarAliquotaNCM(ncm: string): AliquotaNCM | null {
-  if (!ncm) return null;
-
-  // Normalizar NCM removendo pontos e zeros à esquerda
-  const ncmLimpo = ncm.replace(/\./g, "").trim();
-
-  for (const item of ALIQUOTAS_ICMS_PE) {
-    const itemNcmLimpo = item.ncm.replace(/\./g, "").trim();
-
-    // Verificação exata
-    if (ncmLimpo === itemNcmLimpo) return item;
-
-    // Verificação por prefixo (ex: "2402" cobre "24021000", "24022000", etc.)
-    if (ncmLimpo.startsWith(itemNcmLimpo) || itemNcmLimpo.startsWith(ncmLimpo)) {
-      // Só aceitar prefixo se o prefixo tiver pelo menos 4 dígitos
-      if (itemNcmLimpo.length >= 4) return item;
-    }
-  }
-
-  return null;
+  return consultarAliquotaNCM(ncm).regra;
 }
 
 /**
