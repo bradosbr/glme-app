@@ -26,9 +26,10 @@ import {
   listarEmpresasDoUsuario,
   vincularEmpresa,
   desvincularEmpresa,
-  getChavePortal,
-  salvarChavePortal,
-  removerChavePortal,
+  usuarioVinculadoAEmpresa,
+  getChavePortalEmpresa,
+  salvarChavePortalEmpresa,
+  removerChavePortalEmpresa,
 } from "./db";
 import { cifrar, criptografiaDisponivel, mascarar } from "./cripto";
 import axios from "axios";
@@ -491,6 +492,20 @@ function parseDIXML(xmlContent: string): Promise<Record<string, unknown>> {
   });
 }
 
+/**
+ * Trocar ou remover a chave de acesso de uma empresa: administrador, usuário vinculado
+ * à empresa ou, se a empresa ainda não tem chave, quem está cadastrando.
+ */
+async function exigirPermissaoChave(usuario: { id: number; role: string }, importadorId: number) {
+  if (usuario.role === "admin") return;
+  if (!(await getChavePortalEmpresa(importadorId))) return;
+  if (await usuarioVinculadoAEmpresa(usuario.id, importadorId)) return;
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message: "Só o administrador ou um usuário vinculado à empresa pode alterar a chave de acesso dela.",
+  });
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -644,41 +659,9 @@ export const appRouter = router({
       }),
   }),
 
-  // ===== MINHA CONTA: chave do Portal Único e empresas do usuário logado =====
-  // Todas as operações usam ctx.user.id: ninguém lê nem altera dados de outro usuário.
+  // ===== MINHA CONTA: empresas do usuário logado =====
+  // Todas as operações usam ctx.user.id: ninguém lê nem altera vínculos de outro usuário.
   conta: router({
-    chavePortal: protectedProcedure.query(async ({ ctx }) => {
-      const chave = await getChavePortal(ctx.user.id);
-      return {
-        configurada: Boolean(chave),
-        // Só o fim do Client-Id; o Client-Secret nunca sai do servidor
-        clientId: chave ? mascarar(chave.clientId) : null,
-        atualizadaEm: chave?.updatedAt ?? null,
-        criptografiaDisponivel: criptografiaDisponivel(),
-      };
-    }),
-
-    salvarChavePortal: protectedProcedure
-      .input(z.object({
-        clientId: z.string().trim().min(8, "Client-Id inválido").max(255),
-        clientSecret: z.string().trim().min(8, "Client-Secret inválido").max(2000),
-      }))
-      .mutation(async ({ input, ctx }) => {
-        if (!criptografiaDisponivel()) {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: "O servidor não tem a chave de criptografia configurada (CHAVE_CRIPTOGRAFIA). A chave de acesso não foi salva.",
-          });
-        }
-        await salvarChavePortal(ctx.user.id, input.clientId, cifrar(input.clientSecret));
-        return { success: true } as const;
-      }),
-
-    removerChavePortal: protectedProcedure.mutation(async ({ ctx }) => {
-      await removerChavePortal(ctx.user.id);
-      return { success: true } as const;
-    }),
-
     empresas: protectedProcedure.query(({ ctx }) => listarEmpresasDoUsuario(ctx.user.id)),
 
     vincularEmpresa: protectedProcedure
@@ -711,6 +694,11 @@ export const appRouter = router({
     salvar: protectedProcedure
       .input(z.object({
         cnpj: z.string(),
+        /** Chave de acesso do Portal Único da empresa (opcional; só é gravada se informada). */
+        chavePortal: z.object({
+          clientId: z.string().trim().min(8, "Client-Id inválido").max(255),
+          clientSecret: z.string().trim().min(8, "Client-Secret inválido").max(2000),
+        }).optional(),
         razaoSocial: z.string(),
         nomeFantasia: z.string().optional(),
         inscricaoEstadual: z.string().optional(),
@@ -725,12 +713,48 @@ export const appRouter = router({
         editalDBF: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const salvo = await upsertImportador(input);
-        // Quem cadastra a empresa passa a tê-la em "minhas empresas" (pode desvincular depois)
-        if (salvo && "id" in salvo && typeof salvo.id === "number") {
-          await vincularEmpresa(ctx.user.id, salvo.id);
+        const { chavePortal, ...dados } = input;
+        if (chavePortal && !criptografiaDisponivel()) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "O servidor não tem a chave de criptografia configurada (CHAVE_CRIPTOGRAFIA). Nada foi salvo.",
+          });
+        }
+        const existente = await getImportadorByCnpj(dados.cnpj);
+        if (chavePortal && existente) await exigirPermissaoChave(ctx.user, existente.id);
+
+        const salvo = await upsertImportador(dados);
+        const id = salvo && "id" in salvo && typeof salvo.id === "number" ? salvo.id : undefined;
+        // Quem cria o cadastro passa a tê-lo em "minhas empresas" (pode desvincular depois)
+        if (id !== undefined && !existente) await vincularEmpresa(ctx.user.id, id);
+        if (id !== undefined && chavePortal) {
+          await salvarChavePortalEmpresa(id, chavePortal.clientId, cifrar(chavePortal.clientSecret), ctx.user.id);
         }
         return salvo;
+      }),
+
+    /** Situação da chave da empresa: só o fim do Client-Id; o Client-Secret nunca sai do servidor. */
+    chavePortal: protectedProcedure
+      .input(z.object({ importadorId: z.number().int().positive() }))
+      .query(async ({ input, ctx }) => {
+        const chave = await getChavePortalEmpresa(input.importadorId);
+        const podeAlterar = ctx.user.role === "admin" || !chave
+          || await usuarioVinculadoAEmpresa(ctx.user.id, input.importadorId);
+        return {
+          configurada: Boolean(chave),
+          clientId: chave ? mascarar(chave.clientId) : null,
+          atualizadaEm: chave?.updatedAt ?? null,
+          podeAlterar,
+          criptografiaDisponivel: criptografiaDisponivel(),
+        };
+      }),
+
+    removerChavePortal: protectedProcedure
+      .input(z.object({ importadorId: z.number().int().positive() }))
+      .mutation(async ({ input, ctx }) => {
+        await exigirPermissaoChave(ctx.user, input.importadorId);
+        await removerChavePortalEmpresa(input.importadorId);
+        return { success: true } as const;
       }),
 
     buscarPorCNPJ: protectedProcedure

@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,7 +31,6 @@ import {
   LogOut,
   MapPin,
   Plus,
-  Save,
   Search,
   Trash2,
   Upload,
@@ -57,6 +55,7 @@ import { ValoresAdicao } from "@/components/glme/ValoresAdicao";
 import { SituacaoCadastral, type EstadoConsultaSefaz } from "@/components/glme/SituacaoCadastral";
 import { cadastroDaUF } from "@shared/sefazUF";
 import { MinhaContaDialog } from "@/components/glme/MinhaContaDialog";
+import { CadastroEmpresa, type ChavePortalInformada } from "@/components/glme/CadastroEmpresa";
 
 const SECOES = [
   { id: "uf", rotulo: "UF" },
@@ -211,10 +210,6 @@ export default function Home() {
   const utils = trpc.useUtils();
   const { data: minhasEmpresas = [] } = trpc.conta.empresas.useQuery();
 
-  // ===== CADASTRO DE IMPORTADORES =====
-  const [showCadastro, setShowCadastro] = useState(false);
-  const [editalDBFCadastro, setEditalDBFCadastro] = useState("");
-
   // ===== RECINTOS =====
   const { data: recintos = [] } = trpc.recintos.listar.useQuery();
 
@@ -222,17 +217,17 @@ export default function Home() {
   const { data: importadoresBD = [], refetch: refetchImportadores } = trpc.importadores.listar.useQuery();
   const salvarImportadorMutation = trpc.importadores.salvar.useMutation({
     onSuccess: () => {
-      toast.success("Importador salvo no cadastro e vinculado às suas empresas.");
       refetchImportadores();
       utils.conta.empresas.invalidate();
-      setShowCadastro(false);
+      utils.importadores.chavePortal.invalidate();
     },
     onError: (e) => toast.error(`Erro ao salvar: ${e.message}`),
   });
   const excluirImportadorMutation = trpc.importadores.excluir.useMutation({
     onSuccess: () => {
-      toast.success("Importador excluído.");
+      toast.success("Empresa excluída do cadastro.");
       refetchImportadores();
+      utils.conta.empresas.invalidate();
     },
     onError: (e) => toast.error(`Erro ao excluir: ${e.message}`),
   });
@@ -662,13 +657,15 @@ export default function Home() {
     toast.success(`Importador selecionado: ${imp.razaoSocial}`);
   };
 
-  const handleSalvarImportador = () => {
+  /** Grava no cadastro os dados da seção Importador, o edital DBF e, se informada, a chave de acesso. */
+  const handleSalvarCadastro = async (chavePortal?: ChavePortalInformada) => {
     const dados = formData.importador;
-    if (!dados.cnpj || !dados.nome) {
-      toast.error("CNPJ e razão social são obrigatórios.");
-      return;
+    if (dados.cnpj.replace(/\D/g, "").length !== 14 || !dados.nome.trim()) {
+      toast.error("Informe o CNPJ e a razão social antes de salvar o cadastro.");
+      throw new Error("dados incompletos");
     }
-    salvarImportadorMutation.mutate({
+    const jaCadastrada = Boolean(cadastroAtual);
+    await salvarImportadorMutation.mutateAsync({
       cnpj: dados.cnpj.replace(/\D/g, ""),
       razaoSocial: dados.nome,
       nomeFantasia: "",
@@ -681,8 +678,18 @@ export default function Home() {
       uf: dados.uf || "",
       telefone: dados.telefone || "",
       email: "",
-      editalDBF: editalDBFCadastro || "",
+      editalDBF: formData.icmsCalculo.editalDBF || "",
+      chavePortal,
     });
+    toast.success(
+      jaCadastrada
+        ? `Cadastro atualizado${chavePortal ? " com a nova chave de acesso" : ""}.`
+        : `Empresa cadastrada e vinculada às suas empresas${chavePortal ? ", com a chave de acesso" : ""}.`,
+    );
+  };
+
+  const handleExcluirCadastro = async () => {
+    if (cadastroAtual) await excluirImportadorMutation.mutateAsync({ id: cadastroAtual.id });
   };
 
   const handleGerarPDF = async () => {
@@ -720,6 +727,11 @@ export default function Home() {
   };
 
   const tributadas = formData.adicoesTributadas ?? [];
+  // Empresa do cadastro com o CNPJ que está na seção Importador (se houver)
+  const cnpjImportador = formData.importador.cnpj.replace(/\D/g, "");
+  const cadastroAtual = cnpjImportador.length === 14
+    ? (importadoresBD as any[]).find((i) => String(i.cnpj).replace(/\D/g, "") === cnpjImportador)
+    : undefined;
   const icms = formData.icmsCalculo;
   // Refeito a cada alteração do formulário (inclusive o valor aduaneiro da seção ICMS)
   const calculo = useMemo(() => calcularFormulario(formData), [formData]);
@@ -816,10 +828,9 @@ export default function Home() {
           </ul>
         </nav>
         <div ref={acoesRef} className="mx-auto max-w-5xl px-4 pb-3">
-          <div className="grid grid-cols-4 gap-2 sm:gap-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
               <BlocoAcao icone={Upload} titulo="Importar DI / DUIMP" rotuloCurto="Importar" subtitulo="XML da DI ou PDF da DUIMP" variante="principal" carregando={importando} onClick={() => setShowImportar(true)} />
               <BlocoAcao icone={FileDown} titulo="Gerar guia em PDF" rotuloCurto="Gerar PDF" subtitulo="Formulário oficial" carregando={gerandoPDF} onClick={handleGerarPDF} />
-              <BlocoAcao icone={Building2} titulo="Importadores" rotuloCurto="Cadastro" subtitulo="Cadastro e edital DBF" onClick={() => setShowCadastro(true)} />
               <BlocoAcao icone={Eraser} titulo="Limpar formulário" rotuloCurto="Limpar" subtitulo="Começar uma nova guia" variante="perigo" onClick={() => setConfirmarLimpeza(true)} />
             </div>
           </div>
@@ -909,6 +920,18 @@ export default function Home() {
             </div>
           )}
           {camposEmpresa(formData.importador, updateImportador, "importador")}
+          {cnpjImportador.length === 14 && (
+            <CadastroEmpresa
+              key={cadastroAtual?.id ?? cnpjImportador}
+              cadastro={cadastroAtual ? { id: cadastroAtual.id, razaoSocial: cadastroAtual.razaoSocial } : undefined}
+              editalDBF={formData.icmsCalculo.editalDBF}
+              onEditalChange={(v) => updateICMSCalculo("editalDBF", v)}
+              onSalvar={handleSalvarCadastro}
+              salvando={salvarImportadorMutation.isPending}
+              onExcluir={handleExcluirCadastro}
+              excluindo={excluirImportadorMutation.isPending}
+            />
+          )}
         </Secao>
 
         {/* ===== Adquirente ===== */}
@@ -1095,21 +1118,6 @@ export default function Home() {
               <Campo rotulo="Edital DBF" htmlFor="edital-dbf">
                 <Input id="edital-dbf" value={formData.icmsCalculo.editalDBF} onChange={(e) => updateICMSCalculo("editalDBF", e.target.value)} placeholder="Ex.: 001/2024" />
               </Campo>
-              {importadoresBD.some((i: any) => i.editalDBF) && (
-                <Select onValueChange={(id) => {
-                  const imp = importadoresBD.find((i: any) => String(i.id) === id);
-                  if (imp?.editalDBF) updateICMSCalculo("editalDBF", imp.editalDBF);
-                }}>
-                  <SelectTrigger className="w-full sm:w-72">
-                    <SelectValue placeholder="Usar edital de um importador" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {importadoresBD.filter((i: any) => i.editalDBF).map((imp: any) => (
-                      <SelectItem key={imp.id} value={String(imp.id)}>{imp.razaoSocial} — {imp.editalDBF}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
             </div>
 
             <div>
@@ -1239,73 +1247,6 @@ export default function Home() {
 
       {/* ===== Minha conta ===== */}
       <MinhaContaDialog open={showConta} onOpenChange={setShowConta} importadores={importadoresBD as any[]} />
-
-      {/* ===== Importadores ===== */}
-      <Dialog open={showCadastro} onOpenChange={setShowCadastro}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-brand-navy">Importadores</DialogTitle>
-            <DialogDescription>Use um importador cadastrado ou salve o importador atual com o edital DBF.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-5">
-            {importadoresBD.length > 0 && (
-              <ul className="max-h-64 divide-y overflow-y-auto rounded-xl border">
-                {importadoresBD.map((imp: any) => (
-                  <li key={imp.id} className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{imp.razaoSocial}</p>
-                      <p className="tabular-nums text-xs text-muted-foreground">
-                        {imp.cnpj}
-                        {imp.editalDBF && <span className="ml-2 text-brand-sky">Edital {imp.editalDBF}</span>}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 gap-1">
-                      <Button size="sm" variant="outline" onClick={() => { handleSelecionarImportador(imp); setShowCadastro(false); }}>Usar</Button>
-                      <Button size="icon-sm" variant="ghost" aria-label={`Excluir ${imp.razaoSocial}`} className="text-muted-foreground hover:text-destructive" onClick={() => excluirImportadorMutation.mutate({ id: imp.id })}>
-                        <Trash2 />
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <div className="space-y-3 rounded-xl bg-secondary/60 p-4">
-              <p className="text-sm font-medium text-brand-navy">Salvar importador atual</p>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                <Campo rotulo="Consultar CNPJ" htmlFor="cadastro-cnpj" className="flex-1">
-                  <Input
-                    id="cadastro-cnpj"
-                    inputMode="numeric"
-                    placeholder="00.000.000/0000-00"
-                    value={cnpjBusca}
-                    onChange={(e) => setCnpjBusca(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleBuscarCNPJ()}
-                    className="bg-card"
-                  />
-                </Campo>
-                <Button variant="outline" onClick={handleBuscarCNPJ} disabled={cnpjLoading} className="bg-card">
-                  {cnpjLoading ? <Loader2 className="animate-spin" /> : <Search />}
-                  Consultar
-                </Button>
-              </div>
-              {formData.importador.nome && (
-                <p className="text-sm">
-                  <span className="text-muted-foreground">Importador atual: </span>
-                  {formData.importador.nome}
-                </p>
-              )}
-              <Campo rotulo="Edital DBF do importador" htmlFor="edital-cadastro">
-                <Input id="edital-cadastro" placeholder="Ex.: 001/2024" value={editalDBFCadastro} onChange={(e) => setEditalDBFCadastro(e.target.value)} className="bg-card" />
-              </Campo>
-              <Button onClick={handleSalvarImportador} disabled={salvarImportadorMutation.isPending} className="w-full">
-                {salvarImportadorMutation.isPending ? <Loader2 className="animate-spin" /> : <Save />}
-                Salvar no cadastro
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* ===== Confirmação de limpeza ===== */}
       <AlertDialog open={confirmarLimpeza} onOpenChange={setConfirmarLimpeza}>

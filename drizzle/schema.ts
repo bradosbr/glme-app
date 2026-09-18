@@ -88,16 +88,18 @@ export const usuarioEmpresas = pgTable(
 
 export type UsuarioEmpresa = typeof usuarioEmpresas.$inferSelect;
 
-// Chave de acesso do Portal Único (par Client-Id / Client-Secret), gerada pelo próprio usuário
-// no Portal com o e-CPF dele. Uma por usuário. O Client-Secret fica cifrado (server/cripto.ts)
-// e nunca é devolvido ao navegador.
-export const chavesPortalUnico = pgTable("chaves_portal_unico", {
+// Chave de acesso do Portal Único da empresa (par Client-Id / Client-Secret), uma por importador.
+// Tabela separada de importadores para o segredo nunca sair junto na listagem do cadastro.
+// O Client-Secret fica cifrado (server/cripto.ts) e nunca é devolvido ao navegador.
+export const importadorChavesPortal = pgTable("importador_chaves_portal", {
   id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
-  userId: integer("userId").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  importadorId: integer("importadorId").notNull().unique().references(() => importadores.id, { onDelete: "cascade" }),
   clientId: varchar("clientId", { length: 255 }).notNull(),
   clientSecretCifrado: text("clientSecretCifrado").notNull(),
+  // Quem cadastrou ou trocou a chave por último
+  atualizadoPor: integer("atualizadoPor").references(() => users.id, { onDelete: "set null" }),
   createdAt: carimbo("createdAt").defaultNow().notNull(),
   updatedAt: carimbo("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 });
 
-export type ChavePortalUnico = typeof chavesPortalUnico.$inferSelect;
+export type ImportadorChavePortal = typeof importadorChavesPortal.$inferSelect;

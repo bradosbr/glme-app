@@ -1,7 +1,7 @@
 import { and, eq, ilike, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { InsertUser, users, importadores, recintos, InsertImportador, InsertRecinto, usuarioEmpresas, chavesPortalUnico } from "../drizzle/schema";
+import { InsertUser, users, importadores, recintos, InsertImportador, InsertRecinto, usuarioEmpresas, importadorChavesPortal } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { hashPassword } from "./password";
 
@@ -351,28 +351,38 @@ export async function desvincularEmpresa(userId: number, importadorId: number) {
     .where(and(eq(usuarioEmpresas.userId, userId), eq(usuarioEmpresas.importadorId, importadorId)));
 }
 
-// ===== CHAVE DE ACESSO DO PORTAL ÚNICO (Client-Secret sempre cifrado) =====
+// ===== CHAVE DE ACESSO DO PORTAL ÚNICO DA EMPRESA (Client-Secret sempre cifrado) =====
 
-export async function getChavePortal(userId: number) {
+export async function usuarioVinculadoAEmpresa(userId: number, importadorId: number) {
+  const db = await getDb();
+  if (!db) return false;
+  const [linha] = await db.select({ id: usuarioEmpresas.id }).from(usuarioEmpresas)
+    .where(and(eq(usuarioEmpresas.userId, userId), eq(usuarioEmpresas.importadorId, importadorId)))
+    .limit(1);
+  return Boolean(linha);
+}
+
+export async function getChavePortalEmpresa(importadorId: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const [chave] = await db.select().from(chavesPortalUnico).where(eq(chavesPortalUnico.userId, userId)).limit(1);
+  const [chave] = await db.select().from(importadorChavesPortal)
+    .where(eq(importadorChavesPortal.importadorId, importadorId)).limit(1);
   return chave;
 }
 
-export async function salvarChavePortal(userId: number, clientId: string, clientSecretCifrado: string) {
+export async function salvarChavePortalEmpresa(importadorId: number, clientId: string, clientSecretCifrado: string, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.insert(chavesPortalUnico)
-    .values({ userId, clientId, clientSecretCifrado })
+  await db.insert(importadorChavesPortal)
+    .values({ importadorId, clientId, clientSecretCifrado, atualizadoPor: userId })
     .onConflictDoUpdate({
-      target: chavesPortalUnico.userId,
-      set: { clientId, clientSecretCifrado, updatedAt: new Date() },
+      target: importadorChavesPortal.importadorId,
+      set: { clientId, clientSecretCifrado, atualizadoPor: userId, updatedAt: new Date() },
     });
 }
 
-export async function removerChavePortal(userId: number) {
+export async function removerChavePortalEmpresa(importadorId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(chavesPortalUnico).where(eq(chavesPortalUnico.userId, userId));
+  await db.delete(importadorChavesPortal).where(eq(importadorChavesPortal.importadorId, importadorId));
 }

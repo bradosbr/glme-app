@@ -38,15 +38,16 @@ server/
   sefazCadastro.ts          # Webservice CadConsultaCadastro4 (IE e situação cadastral) com certificado A1
   certs/icpBrasil.ts        # Raiz ICP-Brasil v10 (a SEFAZ usa cadeia ICP-Brasil, fora do repositório do Node)
   cripto.ts                 # AES-256-GCM para segredos no banco (CHAVE_CRIPTOGRAFIA)
-  chavePortal.ts            # Decifra a chave de acesso do Portal Único do usuário, só no servidor
+  chavePortal.ts            # Decifra a chave de acesso do Portal Único da empresa, só no servidor
   scripts/seedAdmin.ts      # pnpm db:seed — cria o admin inicial
   scripts/migrarMysqlParaPostgres.ts  # pnpm db:migrar-dados — migração única MySQL -> Postgres
 shared/                     # Tipos e constantes compartilhados
   sefazUF.ts                # Por UF: webservice de consulta cadastral (15 UFs) e link de consulta (27)
 drizzle/
-  schema.ts                 # Schema do banco (users, importadores, recintos, usuario_empresas, chaves_portal_unico)
+  schema.ts                 # Schema do banco (users, importadores, recintos, usuario_empresas, importador_chaves_portal)
   0000_*.sql, 0001_*.sql    # Migrações Postgres (baseline + unaccent/RLS)
-  0002_*.sql                # Vínculo usuário ↔ empresas e chave de acesso do Portal Único (com RLS)
+  0002_*.sql                # Vínculo usuário ↔ empresas (e chave por usuário, trocada na 0003/0004)
+  0003_*.sql, 0004_*.sql    # Chave de acesso do Portal Único passa a ser por empresa (com RLS)
 vercel.json                 # Build, estáticos, região, maxDuration e fallback do SPA
 ```
 
@@ -148,10 +149,11 @@ A migração vai para a produção **antes** do código novo, então a versão a
   exigem login (`protectedProcedure`); usuários exigem admin.
 - **"Usuário ou senha inválidos"** também aparece quando o app está sem banco (`DATABASE_URL` vazia ou
   malformada). Se aparecer com credenciais corretas, confira a variável antes da senha.
-- **Minha conta**: cada usuário guarda a própria chave de acesso do Portal Único (Client-Id / Client-Secret,
-  gerada por ele no Portal com e-CPF e representação de importador). O Client-Secret é cifrado (AES-256-GCM) e
-  nunca volta ao navegador; a tela mostra só o fim do Client-Id. "Minhas empresas" liga o usuário a importadores
-  do cadastro; quem cadastra um importador fica vinculado a ele. Rotas `conta.*` só operam sobre o usuário logado.
+- **Cadastro da empresa** (seção Importador): com um CNPJ completo na seção, abre o bloco de cadastro com os dados
+  da Receita/SEFAZ, o edital DBF e a chave de acesso do Portal Único **da empresa** (Client-Id / Client-Secret).
+  O Client-Secret é cifrado (AES-256-GCM, tabela separada de importadores) e nunca volta ao navegador; a tela
+  mostra só o fim do Client-Id. Trocar/remover a chave: admin, usuário vinculado à empresa ou, se ainda não há
+  chave, quem está cadastrando. Quem **cria** o cadastro fica vinculado ("Minhas empresas", no cabeçalho).
   A consulta da DUIMP pela API ainda não usa a chave guardada (integração a corrigir: `/autenticar/chave-acesso`).
 - **Funções dedicadas**: `api/trpc/duimp.consultarAPI.js` (60s) e `api/trpc/sefaz.consultarCadastro.js` (30s)
   só existem para ter `maxDuration` maior; `server/_core/app.ts` reconstrói o caminho quando o Vercel
@@ -180,9 +182,10 @@ A migração vai para a produção **antes** do código novo, então a versão a
 - Filtragem pela lista negativa do Edital 060/2025 (NCMs com tributação normal vs diferimento)
 - Cálculo automático de ICMS por alíquota, com rateio das despesas aduaneiras e memória de cálculo na guia
 - Geração de PDF com layout oficial da GLME (jsPDF, no navegador)
-- Cadastro de importadores com busca por CNPJ (BrasilAPI / ReceitaWS) e inscrição estadual pela SEFAZ da UF
+- Cadastro de empresas na seção Importador: CNPJ (BrasilAPI / ReceitaWS), inscrição estadual pela SEFAZ da UF,
+  edital DBF e chave de acesso do Portal Único
 - Login local (usuário/senha, scrypt) e administração de usuários
-- 117 testes automatizados (vitest)
+- 118 testes automatizados (vitest)
 
 ## Comandos
 

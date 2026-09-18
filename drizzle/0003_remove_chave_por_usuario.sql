@@ -1,0 +1,1 @@
+DROP TABLE "chaves_portal_unico" CASCADE;
