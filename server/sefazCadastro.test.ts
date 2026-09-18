@@ -57,7 +57,15 @@ describe("SEFAZ - consulta cadastro: resposta", () => {
     );
     expect(r.encontrado).toBe(false);
     expect(r.codigo).toBe("259");
-    expect(r.mensagem).toContain("nao cadastrado");
+    expect(r.mensagem).toBe("O CNPJ não tem inscrição de contribuinte do ICMS nesta UF.");
+  });
+
+  it("explica a recusa de quem não é habilitado a emitir NF-e na UF (cStat 257)", async () => {
+    const r = await interpretarRespostaCadastro(
+      envelope(`<cStat>257</cStat><xMotivo>Rejeicao: Solicitante nao habilitado para emissao da NF-e</xMotivo>`),
+    );
+    expect(r.encontrado).toBe(false);
+    expect(r.mensagem).toContain("só atende consultas de empresas habilitadas a emitir NF-e");
   });
 
   it("falha SOAP vira erro legível", async () => {

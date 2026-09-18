@@ -155,6 +155,17 @@ export interface ResultadoConsultaCadastro {
   cadastros: CadastroContribuinte[];
 }
 
+/**
+ * Rejeições vistas em consultas reais (set/2026), reescritas para dizer o que fazer.
+ * 257: várias SEFAZ (SP, BA, RS e as da SVRS, entre outras) só atendem certificados de empresas
+ * habilitadas a emitir NF-e na própria UF.
+ */
+const MENSAGENS_CSTAT: Record<string, string> = {
+  "257": "Esta SEFAZ só atende consultas de empresas habilitadas a emitir NF-e na UF, e o certificado configurado não é.",
+  "259": "O CNPJ não tem inscrição de contribuinte do ICMS nesta UF.",
+  "215": "A SEFAZ recusou o formato da consulta (código 215).",
+};
+
 const texto = (v: unknown): string => {
   if (v === undefined || v === null) return "";
   // Elemento com atributos (ex.: <Text xml:lang="pt">) chega como { _: "conteúdo", $: {...} }
@@ -194,7 +205,7 @@ export async function interpretarRespostaCadastro(xml: string): Promise<Resultad
   }
 
   const codigo = texto(infCons.cStat);
-  const mensagem = texto(infCons.xMotivo);
+  const mensagem = MENSAGENS_CSTAT[codigo] ?? texto(infCons.xMotivo);
   // 111: uma ocorrência · 112: mais de uma ocorrência (vários estabelecimentos/inscrições)
   const encontrado = codigo === "111" || codigo === "112";
 

@@ -177,6 +177,10 @@ A migração vai para a produção **antes** do código novo, então a versão a
   Webservice CadConsultaCadastro4 em 15 UFs (AM, BA, GO, MG, MS, MT, PE, PR, RS, SP e, pela SVRS, AC, ES, PB,
   RN, SC — Portal da NF-e). As demais (AL, AP, CE, DF, MA, PA, PI, RJ, RO, RR, SE, TO) não têm o serviço: a tela
   mostra o link oficial de consulta da UF e o CCC nacional. Endereços em `shared/sefazUF.ts`.
+  Teste real (18/09/2026) com o e-CNPJ da Brados (RJ): **PE, AM, GO, MG e PR respondem**; AC, BA, ES, MS, PB, RN,
+  RS, SC e SP recusam com cStat 257 (só atendem certificado de empresa habilitada a emitir NF-e na UF); MT devolve
+  cStat 215 (formato) mesmo com cabeçalho nfeCabecMsg. Nesses casos a tela explica e mostra o link de consulta.
+  O .pfx da Brados vem com RC2-40 (formato antigo): `pnpm certificado:configurar` o converte para AES-256.
 - **TLS das SEFAZ**: raiz ICP-Brasil v10 embarcada (conferida contra o repositório do ITI); MG usa Sectigo R46,
   já presente no Node. Nunca desligar a verificação TLS. Rotas `sefaz.*` exigem login (usam o certificado da empresa).
 
