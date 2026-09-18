@@ -22,13 +22,16 @@ import {
   AlertTriangle,
   Boxes,
   Building2,
+  Contact,
   Calculator,
   CheckCircle2,
   Eraser,
   FileDown,
   FileText,
+  KeyRound,
   Loader2,
   LogOut,
+  Pencil,
   MapPin,
   Plus,
   Search,
@@ -53,9 +56,9 @@ import { AdicaoFiscal } from "@/components/glme/AdicaoFiscal";
 import { ImportarDeclaracaoDialog } from "@/components/glme/ImportarDeclaracaoDialog";
 import { ValoresAdicao } from "@/components/glme/ValoresAdicao";
 import { SituacaoCadastral, type EstadoConsultaSefaz } from "@/components/glme/SituacaoCadastral";
-import { cadastroDaUF } from "@shared/sefazUF";
 import { MinhaContaDialog } from "@/components/glme/MinhaContaDialog";
-import { CadastroEmpresa, type ChavePortalInformada } from "@/components/glme/CadastroEmpresa";
+import { CadastroEmpresasDialog, type DadosEmpresa, type EmpresaCadastrada } from "@/components/glme/CadastroEmpresasDialog";
+import { useConsultaSefaz } from "@/hooks/useConsultaSefaz";
 import { RecintoBusca } from "@/components/glme/RecintoBusca";
 import { recintoPorCodigo, type Recinto } from "@/lib/recintos";
 
@@ -215,25 +218,16 @@ export default function Home() {
   // ===== RECINTOS =====
   const { data: recintos = [] } = trpc.recintos.listar.useQuery();
 
-  // ===== IMPORTADORES DO BD =====
-  const { data: importadoresBD = [], refetch: refetchImportadores } = trpc.importadores.listar.useQuery();
-  const salvarImportadorMutation = trpc.importadores.salvar.useMutation({
-    onSuccess: () => {
-      refetchImportadores();
-      utils.conta.empresas.invalidate();
-      utils.importadores.chavePortal.invalidate();
-      utils.importadores.comChavePortal.invalidate();
-    },
-    onError: (e) => toast.error(`Erro ao salvar: ${e.message}`),
-  });
-  const excluirImportadorMutation = trpc.importadores.excluir.useMutation({
-    onSuccess: () => {
-      toast.success("Empresa excluída do cadastro.");
-      refetchImportadores();
-      utils.conta.empresas.invalidate();
-    },
-    onError: (e) => toast.error(`Erro ao excluir: ${e.message}`),
-  });
+  // ===== CADASTRO DE EMPRESAS (dados, edital DBF e chave de acesso ficam na janela de cadastro) =====
+  const { data: importadoresBD = [] } = trpc.importadores.listar.useQuery();
+  const [showCadastro, setShowCadastro] = useState(false);
+  const [cadastroAbrirCom, setCadastroAbrirCom] = useState<DadosEmpresa | null>(null);
+  const abrirCadastro = (empresa: DadosEmpresa | null = null) => {
+    setCadastroAbrirCom(empresa);
+    setShowCadastro(true);
+  };
+  // Chaves de acesso existentes, para indicar na seção Importador (sem mostrar nem alterar)
+  const { data: empresasComChaveTodas = [] } = trpc.importadores.comChavePortal.useQuery();
 
   // ===== IMPORTAÇÃO DE DI / DUIMP =====
   const [showImportar, setShowImportar] = useState(false);
@@ -582,42 +576,13 @@ export default function Home() {
   const importando = parsearXMLMutation.isPending || parsearDuimpPDFMutation.isPending || extraindoTextoPDF;
 
   // ===== SEFAZ: inscrição estadual e situação cadastral (certificado A1) =====
-  const [consultaSefaz, setConsultaSefaz] = useState<EstadoConsultaSefaz>({ estado: "inativo" });
-  const consultarSefazMutation = trpc.sefaz.consultarCadastro.useMutation();
+  const sefaz = useConsultaSefaz();
+  const consultaSefaz: EstadoConsultaSefaz = sefaz.consulta;
 
   /** Consulta a IE na SEFAZ da UF do importador; sem webservice na UF, indica o site de consulta. */
-  const consultarSefaz = async (cnpj: string, ufInformada: string) => {
-    const uf = (ufInformada || "").trim().toUpperCase();
-    const cadastro = cadastroDaUF(uf);
-    if (!cadastro) {
-      setConsultaSefaz({ estado: "erro", uf: uf || "UF", mensagem: "Informe a UF do importador para consultar a inscrição estadual." });
-      return;
-    }
-    if (!cadastro.webservice) {
-      setConsultaSefaz({ estado: "sem_servico", uf });
-      return;
-    }
-    setConsultaSefaz({ estado: "consultando", uf });
-    try {
-      const r = await consultarSefazMutation.mutateAsync({ cnpj, uf });
-      if (!r.encontrado) {
-        setConsultaSefaz({ estado: "nao_encontrado", uf, mensagem: r.mensagem || "CNPJ sem cadastro de contribuinte do ICMS." });
-        return;
-      }
-      setConsultaSefaz({ estado: "encontrado", uf, cadastros: r.cadastros });
-      const principal = r.cadastros.find((c) => c.habilitado) ?? r.cadastros[0];
-      if (principal?.inscricaoEstadual) updateImportador("inscricaoEstadual", principal.inscricaoEstadual);
-      if (principal && !principal.habilitado) {
-        toast.warning(`Inscrição estadual ${principal.inscricaoEstadual} não habilitada na SEFAZ-${uf}.`);
-      }
-    } catch (e: any) {
-      setConsultaSefaz({
-        estado: "erro",
-        uf,
-        mensagem: e?.message || "Falha na consulta.",
-        semCertificado: e?.data?.code === "PRECONDITION_FAILED",
-      });
-    }
+  const consultarSefaz = async (cnpj: string, uf: string) => {
+    const ie = await sefaz.consultar(cnpj, uf);
+    if (ie) updateImportador("inscricaoEstadual", ie);
   };
 
   // ===== CONSULTA CNPJ =====
@@ -674,39 +639,11 @@ export default function Home() {
     toast.success(`Importador selecionado: ${imp.razaoSocial}`);
   };
 
-  /** Grava no cadastro os dados da seção Importador, o edital DBF e, se informada, a chave de acesso. */
-  const handleSalvarCadastro = async (chavePortal?: ChavePortalInformada) => {
-    const dados = formData.importador;
-    if (dados.cnpj.replace(/\D/g, "").length !== 14 || !dados.nome.trim()) {
-      toast.error("Informe o CNPJ e a razão social antes de salvar o cadastro.");
-      throw new Error("dados incompletos");
-    }
-    const jaCadastrada = Boolean(cadastroAtual);
-    await salvarImportadorMutation.mutateAsync({
-      cnpj: dados.cnpj.replace(/\D/g, ""),
-      razaoSocial: dados.nome,
-      nomeFantasia: "",
-      inscricaoEstadual: dados.inscricaoEstadual || "",
-      cnae: dados.cnae || "",
-      endereco: dados.endereco || "",
-      bairro: dados.bairro || "",
-      cep: dados.cep || "",
-      municipio: dados.municipio || "",
-      uf: dados.uf || "",
-      telefone: dados.telefone || "",
-      email: "",
-      editalDBF: formData.icmsCalculo.editalDBF || "",
-      chavePortal,
-    });
-    toast.success(
-      jaCadastrada
-        ? `Cadastro atualizado${chavePortal ? " com a nova chave de acesso" : ""}.`
-        : `Empresa cadastrada e vinculada às suas empresas${chavePortal ? ", com a chave de acesso" : ""}.`,
-    );
-  };
-
-  const handleExcluirCadastro = async () => {
-    if (cadastroAtual) await excluirImportadorMutation.mutateAsync({ id: cadastroAtual.id });
+  /** Depois de salvar no cadastro: se é o importador da guia, a guia acompanha IE e edital. */
+  const handleCadastroSalvo = (dados: DadosEmpresa, editalDBF: string) => {
+    if (dados.cnpj.replace(/\D/g, "") !== formData.importador.cnpj.replace(/\D/g, "")) return;
+    if (dados.inscricaoEstadual) updateImportador("inscricaoEstadual", dados.inscricaoEstadual);
+    if (editalDBF) updateICMSCalculo("editalDBF", editalDBF);
   };
 
   const handleGerarPDF = async () => {
@@ -750,6 +687,12 @@ export default function Home() {
     ? (importadoresBD as any[]).find((i) => String(i.cnpj).replace(/\D/g, "") === cnpjImportador)
     : undefined;
   const icms = formData.icmsCalculo;
+  const editalCadastro = cadastroAtual?.editalDBF || "";
+  const chaveCadastro = cadastroAtual ? (empresasComChaveTodas as any[]).some((e) => e.id === cadastroAtual.id) : false;
+  useEffect(() => {
+    if (editalCadastro && !formData.icmsCalculo.editalDBF) updateICMSCalculo("editalDBF", editalCadastro);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cadastroAtual?.id, editalCadastro]);
   // Refeito a cada alteração do formulário (inclusive o valor aduaneiro da seção ICMS)
   const calculo = useMemo(() => calcularFormulario(formData), [formData]);
 
@@ -845,8 +788,9 @@ export default function Home() {
           </ul>
         </nav>
         <div ref={acoesRef} className="mx-auto max-w-5xl px-4 pb-3">
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="grid grid-cols-4 gap-2 sm:gap-3">
               <BlocoAcao icone={Upload} titulo="Importar DI / DUIMP" rotuloCurto="Importar" subtitulo="XML da DI ou PDF da DUIMP" variante="principal" carregando={importando} onClick={() => setShowImportar(true)} />
+              <BlocoAcao icone={Contact} titulo="Cadastro de empresas" rotuloCurto="Cadastro" subtitulo="Edital e chave de acesso" onClick={() => abrirCadastro()} />
               <BlocoAcao icone={FileDown} titulo="Gerar guia em PDF" rotuloCurto="Gerar PDF" subtitulo="Formulário oficial" carregando={gerandoPDF} onClick={handleGerarPDF} />
               <BlocoAcao icone={Eraser} titulo="Limpar formulário" rotuloCurto="Limpar" subtitulo="Começar uma nova guia" variante="perigo" onClick={() => setConfirmarLimpeza(true)} />
             </div>
@@ -938,16 +882,22 @@ export default function Home() {
           )}
           {camposEmpresa(formData.importador, updateImportador, "importador")}
           {cnpjImportador.length === 14 && (
-            <CadastroEmpresa
-              key={cadastroAtual?.id ?? cnpjImportador}
-              cadastro={cadastroAtual ? { id: cadastroAtual.id, razaoSocial: cadastroAtual.razaoSocial } : undefined}
-              editalDBF={formData.icmsCalculo.editalDBF}
-              onEditalChange={(v) => updateICMSCalculo("editalDBF", v)}
-              onSalvar={handleSalvarCadastro}
-              salvando={salvarImportadorMutation.isPending}
-              onExcluir={handleExcluirCadastro}
-              excluindo={excluirImportadorMutation.isPending}
-            />
+            <div className="mt-5 flex flex-col gap-3 rounded-xl border bg-background/40 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              {cadastroAtual ? (
+                <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="inline-flex items-center gap-1.5 font-medium text-[#00707d]"><CheckCircle2 className="size-4" /> Empresa cadastrada</span>
+                  <span className="text-muted-foreground">Edital DBF: <strong className="font-medium text-foreground">{editalCadastro || "não informado"}</strong></span>
+                  <span className="inline-flex items-center gap-1 text-muted-foreground">
+                    <KeyRound className="size-3.5" /> {chaveCadastro ? "Chave de acesso disponível" : "Sem chave de acesso disponível"}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-muted-foreground">Empresa ainda não cadastrada: cadastre para guardar o edital DBF e a chave de acesso do Portal Único.</span>
+              )}
+              <Button size="sm" variant="outline" className="shrink-0" onClick={() => abrirCadastro({ ...formData.importador })}>
+                {cadastroAtual ? <><Pencil /> Abrir cadastro</> : <><Plus /> Cadastrar empresa</>}
+              </Button>
+            </div>
           )}
         </Secao>
 
@@ -1278,6 +1228,14 @@ export default function Home() {
 
       {/* ===== Minha conta ===== */}
       <MinhaContaDialog open={showConta} onOpenChange={setShowConta} importadores={importadoresBD as any[]} />
+      <CadastroEmpresasDialog
+        open={showCadastro}
+        onOpenChange={setShowCadastro}
+        empresas={importadoresBD as EmpresaCadastrada[]}
+        abrirCom={cadastroAbrirCom}
+        onUsar={handleSelecionarImportador}
+        onSalvo={handleCadastroSalvo}
+      />
 
       {/* ===== Confirmação de limpeza ===== */}
       <AlertDialog open={confirmarLimpeza} onOpenChange={setConfirmarLimpeza}>

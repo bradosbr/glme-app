@@ -70,9 +70,9 @@ export function CadastroEmpresa({ cadastro, editalDBF, onEditalChange, onSalvar,
   };
 
   return (
-    <div className="mt-5 space-y-4 rounded-xl border bg-background/40 p-4">
+    <div className="space-y-4 rounded-xl border bg-background/40 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold text-brand-navy">Cadastro da empresa</h3>
+        <h3 className="font-semibold text-brand-navy">Edital e chave de acesso</h3>
         {cadastro ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-teal-soft px-2.5 py-0.5 text-xs font-medium text-[#00707d]">
             <BadgeCheck className="size-3.5" /> Cadastrada
@@ -84,8 +84,8 @@ export function CadastroEmpresa({ cadastro, editalDBF, onEditalChange, onSalvar,
         )}
       </div>
       <p className="text-sm text-muted-foreground">
-        Os dados acima, vindos da Receita Federal e da SEFAZ, são salvos no cadastro junto com o edital DBF e a chave de acesso
-        do Portal Único da empresa.
+        Os dados acima, vindos da Receita Federal e da SEFAZ, são salvos junto com o edital DBF e a chave de acesso do
+        Portal Único da empresa.
       </p>
 
       <div className="max-w-xs space-y-1.5">

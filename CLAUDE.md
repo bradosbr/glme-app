@@ -23,7 +23,7 @@ api/trpc/
   sefaz.consultarCadastro.js # Mesma API, função separada com maxDuration 30s (SEFAZ-PE)
 client/src/
   pages/Home.tsx            # Página única com o formulário GLME
-  components/glme/          # Seção, blocos de ação, diálogo DI/DUIMP, situação fiscal da adição
+  components/glme/          # Seção, blocos de ação, diálogos DI/DUIMP e cadastro de empresas, situação fiscal da adição
   lib/aliquotasICMS.ts      # Anexo I (PE) e consulta hierárquica de alíquota por NCM
   lib/calculoICMS.ts        # Motor do ICMS: divisor por alíquota, rateios, grupos e memória de cálculo
   lib/calculoFormulario.ts  # Liga o formulário ao motor (modo por adição ou pelos totais)
@@ -151,11 +151,13 @@ A migração vai para a produção **antes** do código novo, então a versão a
   exigem login (`protectedProcedure`); usuários exigem admin.
 - **"Usuário ou senha inválidos"** também aparece quando o app está sem banco (`DATABASE_URL` vazia ou
   malformada). Se aparecer com credenciais corretas, confira a variável antes da senha.
-- **Cadastro da empresa** (seção Importador): com um CNPJ completo na seção, abre o bloco de cadastro com os dados
-  da Receita/SEFAZ, o edital DBF e a chave de acesso do Portal Único **da empresa** (Client-Id / Client-Secret).
-  O Client-Secret é cifrado (AES-256-GCM, tabela separada de importadores) e nunca volta ao navegador; a tela
-  mostra só o fim do Client-Id. Trocar/remover a chave: admin, usuário vinculado à empresa ou, se ainda não há
-  chave, quem está cadastrando. Quem **cria** o cadastro fica vinculado ("Minhas empresas", no cabeçalho).
+- **Cadastro de empresas** (botão "Cadastro" na barra de ações, `CadastroEmpresasDialog`): lista com busca, "Usar na
+  guia" e edição com consulta à Receita e à SEFAZ da UF, edital DBF e chave de acesso do Portal Único **da empresa**
+  (Client-Id / Client-Secret). A seção Importador só mostra um resumo (cadastrada, edital, chave disponível) e o botão
+  "Abrir cadastro"; o edital da empresa cadastrada preenche a guia. O Client-Secret é cifrado (AES-256-GCM, tabela
+  separada de importadores) e nunca volta ao navegador; a tela mostra só o fim do Client-Id. Trocar/remover a chave:
+  admin, usuário vinculado à empresa ou, se ainda não há chave, quem está cadastrando. Quem **cria** o cadastro fica
+  vinculado ("Minhas empresas", no cabeçalho).
 - **DUIMP pela API** (`server/portalUnico.ts`): a janela de importação pede só número e versão (em branco = vigente);
   a chave é a da empresa (seção Importador, ou escolhida entre as que têm chave), usada só por admin ou usuário
   vinculado. Autentica em `/portal/api/autenticar/chave-acesso` (headers Client-Id, Client-Secret, Role-Type IMPEXP;
