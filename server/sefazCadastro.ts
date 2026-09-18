@@ -56,6 +56,13 @@ function contextoSeguro(cert: Certificado) {
     return tls.createSecureContext({ pfx: cert.pfx, passphrase: cert.senha });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    // RC2/3DES (A1 exportado no formato antigo): o OpenSSL 3 do Node não abre sem conversão
+    if (/unsupported/i.test(msg)) {
+      throw new ErroSefaz(
+        "O certificado A1 usa criptografia antiga (RC2/3DES). Rode pnpm certificado:configurar para convertê-lo para AES-256.",
+        "certificado",
+      );
+    }
     if (/mac verify|bad decrypt|password|pkcs12/i.test(msg)) {
       throw new ErroSefaz("Não foi possível abrir o certificado A1: confira a senha e o arquivo .pfx.", "certificado");
     }

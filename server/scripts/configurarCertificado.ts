@@ -6,6 +6,8 @@
  *
  * - Pede a senha do certificado sem mostrá-la na tela.
  * - Confere se o arquivo abre com essa senha e mostra titular e validade.
+ * - Certificados exportados com criptografia antiga (RC2/3DES, comum em A1 brasileiros) não abrem
+ *   no OpenSSL 3 do Node: são convertidos para AES-256, com a mesma senha. O arquivo original não muda.
  * - Grava CERTIFICADO_A1_BASE64 e CERTIFICADO_A1_SENHA no .env (substitui se já existirem).
  * - Com --copiar-base64, copia o conteúdo em base64 para a área de transferência (para colar
  *   na variável do Vercel), sem exibi-lo.
@@ -18,6 +20,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import readline from "node:readline";
 import tls from "node:tls";
+import forge from "node-forge";
 
 const args = process.argv.slice(2);
 const arquivoEnv = resolve(valorDaOpcao("--env") ?? ".env");
@@ -56,6 +59,36 @@ function dadosDoCertificado(pfx: Buffer, senha: string) {
   return { titular: cert.subject?.CN ?? "?", emissor: cert.issuer?.CN ?? "?", validoAte: new Date(cert.valid_to) };
 }
 
+class SenhaIncorreta extends Error {}
+
+/**
+ * Regrava o .pfx com AES-256 (PBES2), mantendo a senha: lê o formato antigo com o node-forge,
+ * que não depende do OpenSSL, e exporta a chave com o certificado e a cadeia.
+ */
+function converterParaAes(pfx: Buffer, senha: string): Buffer {
+  let p12: forge.pkcs12.Pkcs12Pfx;
+  try {
+    p12 = forge.pkcs12.pkcs12FromAsn1(forge.asn1.fromDer(pfx.toString("binary")), senha);
+  } catch (e) {
+    if (/MAC could not be verified|Invalid password/i.test(String(e))) throw new SenhaIncorreta();
+    throw e;
+  }
+  const bagsChave = [
+    ...(p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] ?? []),
+    ...(p12.getBags({ bagType: forge.pki.oids.keyBag })[forge.pki.oids.keyBag] ?? []),
+  ];
+  const chave = bagsChave.find((b) => b.key)?.key as forge.pki.rsa.PrivateKey | undefined;
+  if (!chave) throw new Error("O arquivo não contém a chave privada.");
+  const certificados = (p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag] ?? [])
+    .map((b) => b.cert)
+    .filter((c): c is forge.pki.Certificate => Boolean(c));
+  // O certificado da própria chave vem primeiro; depois a cadeia
+  const doTitular = (c: forge.pki.Certificate) => (c.publicKey as forge.pki.rsa.PublicKey).n.equals(chave.n);
+  certificados.sort((a, b) => Number(doTitular(b)) - Number(doTitular(a)));
+  const novo = forge.pkcs12.toPkcs12Asn1(chave, certificados, senha, { algorithm: "aes256", count: 10000 });
+  return Buffer.from(forge.asn1.toDer(novo).getBytes(), "binary");
+}
+
 /** Substitui (ou acrescenta) VARIAVEL=valor no .env, preservando o resto do arquivo. */
 function gravarNoEnv(conteudo: string, variavel: string, valor: string): string {
   const linha = `${variavel}=${valor}`;
@@ -84,15 +117,29 @@ async function main() {
     console.error(`Arquivo não encontrado: ${caminho}`);
     process.exit(1);
   }
-  const pfx = readFileSync(caminho);
+  let pfx: Buffer = readFileSync(caminho);
   const senha = await perguntarSenha("Senha do certificado (não aparece ao digitar): ");
 
   let dados;
   try {
     dados = dadosDoCertificado(pfx, senha);
-  } catch {
-    console.error("\nNão foi possível abrir o certificado: confira a senha e se o arquivo é um .pfx/.p12 válido.");
-    process.exit(1);
+  } catch (erroNativo) {
+    // O OpenSSL 3 recusa RC2/3DES ("unsupported") e também senha errada ("mac verify failure");
+    // o node-forge distingue os dois casos e converte o arquivo antigo
+    try {
+      pfx = converterParaAes(pfx, senha);
+      dados = dadosDoCertificado(pfx, senha);
+      console.log("\nO certificado usava criptografia antiga (RC2/3DES) e foi convertido para AES-256, com a mesma senha.");
+    } catch (erro) {
+      if (erro instanceof SenhaIncorreta) {
+        console.error("\nSenha incorreta para este certificado.");
+      } else {
+        console.error("\nNão foi possível abrir o certificado.");
+        console.error(`  Motivo: ${erro instanceof Error ? erro.message : String(erro)}`);
+        console.error(`  (OpenSSL: ${erroNativo instanceof Error ? erroNativo.message : String(erroNativo)})`);
+      }
+      process.exit(1);
+    }
   }
 
   const vencido = dados.validoAte.getTime() < Date.now();

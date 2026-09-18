@@ -116,3 +116,8 @@ client/public/__manus__/
 
 # Vercel
 .vercel
+
+# Certificados digitais (chave privada): nunca versionar
+*.pfx
+*.p12
+certificado/
