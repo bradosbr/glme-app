@@ -123,6 +123,7 @@ export interface FormData {
     vt: string;
     vti: string;
     vf: string;
+    /** @deprecated Substituído pela memória de cálculo; não é mais exibido nem impresso. */
     textoAdicional?: string;
   };
 }

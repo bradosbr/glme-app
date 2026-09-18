@@ -4,7 +4,6 @@ import { extrairTextoPDF } from "@/lib/extrairTextoPDF";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -1098,15 +1097,6 @@ export default function Home() {
                 produtos impedidos para utilização do Programa de Estímulo à Atividade Portuária - PEAP - Anexo 27 do Decreto nº 44.650/2017.
               </p>
             </div>
-
-            <Campo rotulo="Texto complementar (impresso abaixo do fundamento legal)" htmlFor="texto-adicional">
-              <Textarea
-                id="texto-adicional"
-                className="min-h-[88px]"
-                value={formData.icmsCalculo.textoAdicional || ""}
-                onChange={(e) => updateICMSCalculo("textoAdicional", e.target.value)}
-              />
-            </Campo>
 
             <div className="space-y-3">
               <div>

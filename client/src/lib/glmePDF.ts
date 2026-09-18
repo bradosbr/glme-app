@@ -50,6 +50,7 @@ export interface GLMEFormData {
     vt: string;
     vti: string;
     vf: string;
+    /** @deprecated Substituído pela memória de cálculo; não é mais exibido nem impresso. */
     textoAdicional?: string;
     /** Memória de cálculo por alíquota (VT, VTI e VF), gerada por calculoICMS. */
     memoria?: Array<{ texto: string; destaque?: boolean }>;
@@ -73,23 +74,17 @@ type Bloco54 = { text: string; bold?: boolean; size?: number };
 const FUNDAMENTO_PEAP = (edital: string) =>
   `ICMS diferido nos termos da Lei nº 13.942/2009, art. 2º-A, I; § 1º; Decreto 44.650/2017, Anexo 8, art. 49, Anexo 27, art. 1º, II; Credenciamento de estímulo à atividade portuária – Edital DBF nº. ${edital}; Mercadoria não prevista na Lista de produtos impedidos para utilização do Programa de Estímulo à Atividade Portuária - PEAP - Anexo 27 do Decreto nº 44.650/2017.`;
 
-/** Texto do campo 5.4: fundamento legal, texto complementar e memória de cálculo por alíquota. */
+/**
+ * Texto do campo 5.4: fundamento legal e memória de cálculo por alíquota
+ * (gerada por calculoICMS; a frente usa a versão compacta).
+ */
 function blocosCampo54(fd: GLMEFormData, lado: "frente" | "verso"): Bloco54[] {
   const edital = fd.icmsCalculo?.editalDBF || "XXX/XXXX";
-  const textoAd = fd.icmsCalculo?.textoAdicional || "";
-  const memoria = (lado === "frente" && fd.icmsCalculo?.memoriaFrente) || fd.icmsCalculo?.memoria;
-  const calculo: Bloco54[] = memoria && memoria.length > 0
-    ? memoria.map((l) => ({ text: l.texto, bold: l.destaque, size: l.destaque ? 7.5 : 7.2 }))
-    : [
-        { text: `CÁLCULO: (VALOR ADUANEIRO) R${fmt(fd.icmsCalculo?.valorCIF || "0")} + TRIBUTOS R${fmt(fd.icmsCalculo?.impostos || "0")} = (VT) R${fmt(fd.icmsCalculo?.vt || "0")}`, bold: true, size: 7.5 },
-        { text: `BASE DE CÁLCULO: (VT) R${fmt(fd.icmsCalculo?.vt || "0")} ÷ 0,795 = (VTI) R${fmt(fd.icmsCalculo?.vti || "0")}`, bold: true, size: 7.5 },
-        { text: `ICMS: (VTI) R${fmt(fd.icmsCalculo?.vti || "0")} × 20,5% = (VF) R${fmt(fd.icmsCalculo?.vf || "0")}`, bold: true, size: 7.5 },
-      ];
+  const memoria = (lado === "frente" && fd.icmsCalculo?.memoriaFrente) || fd.icmsCalculo?.memoria || [];
   return [
     { text: FUNDAMENTO_PEAP(edital), size: 7.2 },
-    ...(textoAd ? [{ text: textoAd, size: 7.2 }] : []),
     { text: "", size: 3 }, // espaço
-    ...calculo,
+    ...memoria.map((l) => ({ text: l.texto, bold: l.destaque, size: l.destaque ? 7.5 : 7.2 })),
   ];
 }
 
