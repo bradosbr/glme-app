@@ -1,7 +1,6 @@
-import { AlertTriangle, ChevronDown, FileCode2, FileText, Link2, Loader2, UploadCloud } from "lucide-react";
+import { AlertTriangle, FileCode2, FileText, Link2, Loader2, UploadCloud } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -113,12 +112,11 @@ export function ImportarDeclaracaoDialog({
           </span>
         </button>
 
-        <Collapsible>
-          <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-lg px-1 py-2 text-sm font-medium text-muted-foreground hover:text-brand-navy">
-            <span className="flex items-center gap-2"><Link2 className="size-4" /> Consultar DUIMP pela API do Portal Único</span>
-            <ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
-          </CollapsibleTrigger>
-          <CollapsibleContent className="space-y-3 pt-2">
+        {/* Consulta pela API sempre à mostra, abaixo do envio de arquivo */}
+        <section className="space-y-3" aria-labelledby="api-titulo">
+          <h3 id="api-titulo" className="flex items-center gap-2 px-1 pt-2 text-sm font-medium text-muted-foreground">
+            <Link2 className="size-4" /> Consultar DUIMP pela API do Portal Único
+          </h3>
             <p className="rounded-xl bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
               A consulta usa a chave de acesso do Portal Único cadastrada na empresa (botão Cadastro, na barra de ações)
               e traz todos os itens, com valor aduaneiro e tributos, para o cálculo do ICMS.
@@ -163,8 +161,7 @@ export function ImportarDeclaracaoDialog({
               {consultandoAPI ? <Loader2 className="animate-spin" /> : <Link2 />}
               {consultandoAPI ? "Consultando o Portal Único…" : "Consultar DUIMP"}
             </Button>
-          </CollapsibleContent>
-        </Collapsible>
+        </section>
       </DialogContent>
     </Dialog>
   );
