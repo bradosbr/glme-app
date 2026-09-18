@@ -163,6 +163,13 @@ A migração vai para a produção **antes** do código novo, então a versão a
   menos de 60 s dá PLAT-ER2033) e busca versão vigente, dados gerais e itens (100 por página). As adições seguem o
   bloco oficial `adicoes` da DUIMP; tributos pelo valor a recolher (como na DI). `PORTAL_UNICO_AMBIENTE=validacao`
   aponta para o ambiente de testes da Receita.
+- **Recinto alfandegado**: o campo busca no cadastro de recintos enquanto se digita (nome, cidade, UF, tipo ou código,
+  sem acento); ao escolher, preenche o código completo e a UF de desembaraço. A API da DUIMP não traz o recinto de
+  armazenamento (só `carga.recintoEntrega` em situação especial de despacho); DI e DUIMP casam o código de 7 dígitos
+  com o cadastro (`recintoPorCodigo`).
+- **UF de recolhimento** acompanha a UF do importador sempre que ela é preenchida (`useGLMEForm`).
+- **Adquirente**: cada importação e o "Limpar" marcam "Mesmo do importador"; só desmarca quando a declaração indica
+  conta e ordem ou encomenda (na DUIMP, `caracterizacaoImportacao.ni` do item).
 - **Funções dedicadas**: `api/trpc/duimp.consultarAPI.js` (60s) e `api/trpc/sefaz.consultarCadastro.js` (30s)
   só existem para ter `maxDuration` maior; `server/_core/app.ts` reconstrói o caminho quando o Vercel
   entrega a rota dinâmica reescrita.
@@ -198,7 +205,7 @@ A migração vai para a produção **antes** do código novo, então a versão a
 - Cadastro de empresas na seção Importador: CNPJ (BrasilAPI / ReceitaWS), inscrição estadual pela SEFAZ da UF,
   edital DBF e chave de acesso do Portal Único
 - Login local (usuário/senha, scrypt) e administração de usuários
-- 133 testes automatizados (vitest)
+- 142 testes automatizados (vitest)
 
 ## Comandos
 

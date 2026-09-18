@@ -224,6 +224,11 @@ export function useGLMEForm() {
         // O valor aduaneiro da declaração alimenta o cálculo pelos totais.
         // VT, VTI e VF não são gravados aqui: o cálculo é derivado do formulário
         // (lib/calculoFormulario) e refeito a cada alteração de qualquer campo.
+        // A UF de recolhimento é sempre a UF do importador (consulta de CNPJ, DI, DUIMP ou
+        // cadastro); o usuário ainda pode alterá-la depois, na seção UF de recolhimento
+        if (path === "importador.uf" && value) {
+          newData.secretariaUF = value;
+        }
         if (path === "valorCIFAdicion") {
           newData.icmsCalculo.valorCIF = value;
         }

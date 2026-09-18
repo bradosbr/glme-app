@@ -56,6 +56,8 @@ import { SituacaoCadastral, type EstadoConsultaSefaz } from "@/components/glme/S
 import { cadastroDaUF } from "@shared/sefazUF";
 import { MinhaContaDialog } from "@/components/glme/MinhaContaDialog";
 import { CadastroEmpresa, type ChavePortalInformada } from "@/components/glme/CadastroEmpresa";
+import { RecintoBusca } from "@/components/glme/RecintoBusca";
+import { recintoPorCodigo, type Recinto } from "@/lib/recintos";
 
 const SECOES = [
   { id: "uf", rotulo: "UF" },
@@ -314,8 +316,17 @@ export default function Home() {
     toast.success(`Importador encontrado no cadastro: ${interno.razaoSocial}`);
   };
 
+  /** Preenche o recinto a partir do cadastro (nome, código completo e UF de desembaraço). */
+  const aplicarRecinto = (r: Recinto) => {
+    updateDocumento("nomeRecinto", r.nome);
+    updateDocumento("codRecinto", r.codigo);
+    if (r.uf) updateDocumento("ufDesembaraco", r.uf);
+  };
+
   const preencherFormularioDuimp = async (dados: any) => {
     let preenchidos = 0;
+    // Nova declaração: adquirente volta a ser o próprio importador, salvo se ela indicar outro
+    setAdquirenteIgualImportador(true);
 
     // === IMPORTADOR: 1º cadastro interno → 2º dados do PDF ===
     const cnpjRaw = dados.importadorCnpj?.replace(/\D/g, "");
@@ -366,15 +377,13 @@ export default function Home() {
       updateICMSCalculo("valorCIF", dados.valorAduaneiro);
       preenchidos++;
     }
-    if (dados.recintoNome) { updateDocumento("nomeRecinto", dados.recintoNome); preenchidos++; }
-    if (dados.recintoCodigoRaw) {
-      updateDocumento("codRecinto", dados.recintoCodigoRaw);
-      preenchidos++;
-      const recintoEncontrado = recintos.find((r: any) => {
-        const codigoDB = r.codigo.replace(/[.\-]/g, "");
-        return codigoDB === dados.recintoCodigoRaw || codigoDB.startsWith(dados.recintoCodigoRaw.slice(0, 6));
-      });
-      if (recintoEncontrado?.uf) { updateDocumento("ufDesembaraco", recintoEncontrado.uf); preenchidos++; }
+    const recintoDuimp = recintoPorCodigo(recintos as Recinto[], dados.recintoCodigoRaw);
+    if (recintoDuimp) {
+      aplicarRecinto(recintoDuimp);
+      preenchidos += 3;
+    } else {
+      if (dados.recintoNome) { updateDocumento("nomeRecinto", dados.recintoNome); preenchidos++; }
+      if (dados.recintoCodigoRaw) { updateDocumento("codRecinto", dados.recintoCodigoFormatado || dados.recintoCodigoRaw); preenchidos++; }
     }
 
     // === ICMS: tributos federais e Taxa Siscomex em campos separados ===
@@ -429,6 +438,8 @@ export default function Home() {
   const parsearXMLMutation = trpc.di.parsearXML.useMutation({
     onSuccess: async (data: any) => {
       let preenchidos = 0;
+      // Nova declaração: adquirente volta a ser o próprio importador
+      setAdquirenteIgualImportador(true);
 
       // ===== IMPORTADOR: 1º cadastro interno → 2º BrasilAPI → 3º dados do XML =====
       const preencherImportadorDoXML = (comCnpj?: string) => {
@@ -500,6 +511,9 @@ export default function Home() {
       if (data.recintoNome) { updateDocumento("nomeRecinto", data.recintoNome); preenchidos++; }
       if (data.urfNome) { updateDocumento("urfNome", data.urfNome); preenchidos++; }
       if (data.ufDesembaraco) { updateDocumento("ufDesembaraco", data.ufDesembaraco); preenchidos++; }
+      // O recinto do cadastro traz o código completo e a UF de desembaraço correta
+      const recintoDI = recintoPorCodigo(recintos as Recinto[], data.recintoCodigoRaw);
+      if (recintoDI) aplicarRecinto(recintoDI);
       // Valor aduaneiro: soma das adições (base do II); o CIF do texto livre fica como reserva
       const valorAduaneiro = paraNumero(data.valorAduaneiroTotal) > 0 ? data.valorAduaneiroTotal : data.valorCIFReais || data.valorCIF;
       if (valorAduaneiro) {
@@ -1007,7 +1021,17 @@ export default function Home() {
                 />
               </Campo>
               <Campo rotulo="Recinto alfandegado" htmlFor="doc-recinto" className="sm:col-span-2">
-                <Input id="doc-recinto" value={formData.documento.nomeRecinto || ""} onChange={(e) => updateDocumento("nomeRecinto", e.target.value)} />
+                <RecintoBusca
+                  id="doc-recinto"
+                  recintos={recintos as Recinto[]}
+                  nome={formData.documento.nomeRecinto || ""}
+                  onNomeChange={(v) => {
+                    updateDocumento("nomeRecinto", v);
+                    // Texto digitado deixa de ser o recinto escolhido: o código só vem da seleção
+                    if (formData.documento.codRecinto) updateDocumento("codRecinto", "");
+                  }}
+                  onSelecionar={aplicarRecinto}
+                />
               </Campo>
               <Campo rotulo="Código do recinto" htmlFor="doc-cod-recinto">
                 <Input id="doc-cod-recinto" value={formData.documento.codRecinto} disabled className="bg-secondary/60" />
@@ -1262,7 +1286,7 @@ export default function Home() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => { resetForm(); setAdquirenteIgualImportador(false); }}>
+            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => { resetForm(); setAdquirenteIgualImportador(true); }}>
               Limpar
             </AlertDialogAction>
           </AlertDialogFooter>

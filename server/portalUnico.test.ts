@@ -71,6 +71,18 @@ describe("Portal Único - conversão da DUIMP", () => {
     expect(r.adicoes![0]).toMatchObject({ ncm: "84713012", pesoLiquido: "20.00000", valorAduaneiro: "1500.10", ipi: "225.00" });
   });
 
+  it("importação por conta e ordem traz o CNPJ do adquirente; direta, não", () => {
+    const terceiro = { ...item(1, "84713012", 10, tributos(0, 0, 0, 0)), caracterizacaoImportacao: { indicador: "IMPORTACAO_POR_CONTA_E_ORDEM", ni: "22222222000122" } };
+    expect(mapearDuimpAPI({}, [terceiro]).adquirenteCnpj).toBe("22222222000122");
+    const direta = { ...item(1, "84713012", 10, tributos(0, 0, 0, 0)), caracterizacaoImportacao: { indicador: "IMPORTACAO_DIRETA" } };
+    expect(mapearDuimpAPI({}, [direta]).adquirenteCnpj).toBeUndefined();
+  });
+
+  it("usa o recinto de entrega quando a DUIMP informa (7 dígitos)", () => {
+    expect(mapearDuimpAPI({ carga: { recintoEntrega: 4932101 } }, []).recintoCodigoRaw).toBe("4932101");
+    expect(mapearDuimpAPI({}, []).recintoCodigoRaw).toBeUndefined();
+  });
+
   it("sem taxa no total da declaração, soma a taxa dos itens", () => {
     const r = mapearDuimpAPI({}, [item(1, "1", 10, tributos(0, 0, 0, 0, 115.67)), item(2, "1", 10, tributos(0, 0, 0, 0, 115.67))]);
     expect(r.taxaSiscomex).toBe("231.34");

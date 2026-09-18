@@ -147,6 +147,8 @@ interface TributoCalculado {
 
 export interface ItemDuimpAPI {
   status?: string;
+  /** Importação por conta e ordem / encomenda: ni = CNPJ do adquirente ou encomendante. */
+  caracterizacaoImportacao?: { indicador?: string; ni?: string | number };
   identificacao?: { numeroItem?: number };
   produto?: { ncm?: string | number };
   mercadoria?: { pesoLiquido?: Numero; descricao?: string };
@@ -161,6 +163,8 @@ export interface DuimpGeralAPI {
   adicoes?: { numero?: number; itens?: number[] }[];
   tributos?: { tributosCalculados?: TributoCalculado[] };
   quantidadeItens?: number;
+  /** recintoEntrega só vem em situações especiais de despacho (código de 7 dígitos). */
+  carga?: { recintoEntrega?: Numero };
 }
 
 // ---------------------------------------------------------------------------
@@ -240,11 +244,19 @@ export function mapearDuimpAPI(geral: DuimpGeralAPI, itens: ItemDuimpAPI[]): Dui
 
   const tributos = total("ii") + total("ipi") + total("pis") + total("cofins");
 
+  // Adquirente: primeiro item importado por conta e ordem ou por encomenda
+  const porTerceiro = ativos.find(
+    (i) => i.caracterizacaoImportacao?.indicador && i.caracterizacaoImportacao.indicador !== "IMPORTACAO_DIRETA" && texto(i.caracterizacaoImportacao.ni),
+  );
+  const recinto = texto(geral.carga?.recintoEntrega).replace(/\D/g, "");
+
   return {
     numeroDuimp: texto(geral.identificacao?.numero) || undefined,
     versaoDuimp: texto(geral.identificacao?.versao) || undefined,
     dataRegistro: dataBR(geral.identificacao?.dataRegistro),
     importadorCnpj: texto(geral.identificacao?.importador?.ni) || undefined,
+    adquirenteCnpj: porTerceiro ? texto(porTerceiro.caracterizacaoImportacao!.ni) : undefined,
+    recintoCodigoRaw: recinto.length >= 7 ? recinto.slice(0, 7) : undefined,
     valorAduaneiro: reais(total("valorAduaneiro")),
     ii: reais(total("ii")),
     ipi: reais(total("ipi")),
