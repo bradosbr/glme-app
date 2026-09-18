@@ -220,6 +220,7 @@ export default function Home() {
       refetchImportadores();
       utils.conta.empresas.invalidate();
       utils.importadores.chavePortal.invalidate();
+      utils.importadores.comChavePortal.invalidate();
     },
     onError: (e) => toast.error(`Erro ao salvar: ${e.message}`),
   });
@@ -234,6 +235,8 @@ export default function Home() {
 
   // ===== IMPORTAÇÃO DE DI / DUIMP =====
   const [showImportar, setShowImportar] = useState(false);
+  // Empresas cuja chave de acesso do Portal Único o usuário pode usar na consulta da DUIMP
+  const { data: empresasComChave = [] } = trpc.importadores.comChavePortal.useQuery(undefined, { enabled: showImportar });
   const [extraindoTextoPDF, setExtraindoTextoPDF] = useState(false);
 
   /**
@@ -1243,6 +1246,8 @@ export default function Home() {
         processando={importando}
         onConsultarAPI={(dados) => consultarDuimpAPIMutation.mutate(dados)}
         consultandoAPI={consultarDuimpAPIMutation.isPending}
+        empresasComChave={empresasComChave}
+        empresaSugeridaId={cadastroAtual?.id}
       />
 
       {/* ===== Minha conta ===== */}

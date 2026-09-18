@@ -40,6 +40,7 @@ export function CadastroEmpresa({ cadastro, editalDBF, onEditalChange, onSalvar,
       toast.success("Chave de acesso removida.");
       setConfirmarRemocaoChave(false);
       utils.importadores.chavePortal.invalidate();
+      utils.importadores.comChavePortal.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });

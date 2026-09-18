@@ -76,6 +76,7 @@ vercel.json                 # Build, estáticos, região, maxDuration e fallback
 | `MYSQL_URL` | Só na migração | Origem MySQL para `db:migrar-dados` (uso único) |
 | `CERTIFICADO_A1_BASE64` | Não | Arquivo .pfx do e-CNPJ A1 em base64 — consulta de IE nas SEFAZ |
 | `CERTIFICADO_A1_SENHA` | Com o certificado | Senha do .pfx |
+| `PORTAL_UNICO_AMBIENTE` | Não | `producao` (padrão) ou `validacao` — ambiente da API da DUIMP |
 | `CHAVE_CRIPTOGRAFIA` | Para salvar chaves | 32 bytes em base64, diferente por ambiente — cifra o Client-Secret do Portal Único |
 
 Na connection string, substitua `[YOUR-PASSWORD]` **inclusive os colchetes** pela senha.
@@ -154,7 +155,13 @@ A migração vai para a produção **antes** do código novo, então a versão a
   O Client-Secret é cifrado (AES-256-GCM, tabela separada de importadores) e nunca volta ao navegador; a tela
   mostra só o fim do Client-Id. Trocar/remover a chave: admin, usuário vinculado à empresa ou, se ainda não há
   chave, quem está cadastrando. Quem **cria** o cadastro fica vinculado ("Minhas empresas", no cabeçalho).
-  A consulta da DUIMP pela API ainda não usa a chave guardada (integração a corrigir: `/autenticar/chave-acesso`).
+- **DUIMP pela API** (`server/portalUnico.ts`): a janela de importação pede só número e versão (em branco = vigente);
+  a chave é a da empresa (seção Importador, ou escolhida entre as que têm chave), usada só por admin ou usuário
+  vinculado. Autentica em `/portal/api/autenticar/chave-acesso` (headers Client-Id, Client-Secret, Role-Type IMPEXP;
+  token em Set-Token, X-CSRF-Token renovado a cada resposta), reaproveita a sessão por 50 min (reautenticar em
+  menos de 60 s dá PLAT-ER2033) e busca versão vigente, dados gerais e itens (100 por página). As adições seguem o
+  bloco oficial `adicoes` da DUIMP; tributos pelo valor a recolher (como na DI). `PORTAL_UNICO_AMBIENTE=validacao`
+  aponta para o ambiente de testes da Receita.
 - **Funções dedicadas**: `api/trpc/duimp.consultarAPI.js` (60s) e `api/trpc/sefaz.consultarCadastro.js` (30s)
   só existem para ter `maxDuration` maior; `server/_core/app.ts` reconstrói o caminho quando o Vercel
   entrega a rota dinâmica reescrita.
@@ -178,14 +185,15 @@ A migração vai para a produção **antes** do código novo, então a versão a
 - Importação unificada **DI / DUIMP**: `.xml` vai para o parser da DI, `.pdf` para o da DUIMP (API do Portal Único como opção secundária)
 - Cada adição mostra a alíquota de recolhimento (`consultarAliquotaNCM`: a regra mais específica do Anexo I vence — NCM, subitem, subposição, posição ou capítulo — senão 20,5%) e os itens da DUIMP que a compõem
 - Importação XML de DI: extrai importador, adições (NCM, impostos), dados da declaração, calcula ICMS
-- Importação DUIMP: via PDF (extraído no navegador) ou API Portal Único
+- Importação DUIMP: via PDF (extraído no navegador) ou API do Portal Único com a chave de acesso da empresa
+  (todos os itens, com valor aduaneiro, tributos e peso)
 - Filtragem pela lista negativa do Edital 060/2025 (NCMs com tributação normal vs diferimento)
 - Cálculo automático de ICMS por alíquota, com rateio das despesas aduaneiras e memória de cálculo na guia
 - Geração de PDF com layout oficial da GLME (jsPDF, no navegador)
 - Cadastro de empresas na seção Importador: CNPJ (BrasilAPI / ReceitaWS), inscrição estadual pela SEFAZ da UF,
   edital DBF e chave de acesso do Portal Único
 - Login local (usuário/senha, scrypt) e administração de usuários
-- 118 testes automatizados (vitest)
+- 133 testes automatizados (vitest)
 
 ## Comandos
 

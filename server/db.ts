@@ -386,3 +386,22 @@ export async function removerChavePortalEmpresa(importadorId: number) {
   if (!db) throw new Error("Database not available");
   await db.delete(importadorChavesPortal).where(eq(importadorChavesPortal.importadorId, importadorId));
 }
+
+/**
+ * Empresas cuja chave de acesso o usuário pode usar para consultar a DUIMP:
+ * todas as que têm chave (admin) ou só as vinculadas a ele.
+ */
+export async function listarEmpresasComChave(userId: number, admin: boolean) {
+  const db = await getDb();
+  if (!db) return [];
+  const base = db
+    .select({ id: importadores.id, razaoSocial: importadores.razaoSocial, cnpj: importadores.cnpj })
+    .from(importadores)
+    .innerJoin(importadorChavesPortal, eq(importadorChavesPortal.importadorId, importadores.id));
+  const consulta = admin
+    ? base
+    : base
+        .innerJoin(usuarioEmpresas, eq(usuarioEmpresas.importadorId, importadores.id))
+        .where(eq(usuarioEmpresas.userId, userId));
+  return consulta.orderBy(importadores.razaoSocial);
+}

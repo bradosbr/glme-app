@@ -37,7 +37,14 @@ vi.mock("./db", () => ({
   desvincularEmpresa: vi.fn(async (userId: number, importadorId: number) => {
     banco.vinculos.delete(`${userId}:${importadorId}`);
   }),
+  listarEmpresasComChave: vi.fn(async (userId: number, admin: boolean) =>
+    banco.importadores.filter((i) => banco.chaves.has(i.id) && (admin || banco.vinculos.has(`${userId}:${i.id}`))),
+  ),
 }));
+
+// A consulta ao Portal Único é simulada: aqui só importa com qual chave ela é chamada
+const consultarDuimp = vi.hoisted(() => vi.fn(async () => ({ numeroDuimp: "26BR00000000011", adicoes: [] })));
+vi.mock("./portalUnico", async (original) => ({ ...(await original<typeof import("./portalUnico")>()), consultarDuimp }));
 
 const { appRouter } = await import("./routers");
 const { chavePortalDaEmpresa } = await import("./chavePortal");
@@ -156,5 +163,37 @@ describe("Minha conta - empresas do usuário", () => {
     const anonimo = appRouter.createCaller({ ...contexto(1), user: null } as unknown as TrpcContext);
     await expect(anonimo.conta.empresas()).rejects.toThrow();
     await expect(anonimo.importadores.chavePortal({ importadorId: 1 })).rejects.toThrow();
+  });
+});
+
+describe("Consulta da DUIMP pela API com a chave da empresa", () => {
+  const consulta = { numeroDuimp: "26BR0000000001-1", importadorId: 1 };
+
+  it("usuário vinculado consulta com a chave decifrada da empresa", async () => {
+    await appRouter.createCaller(contexto(1)).importadores.salvar({ ...empresa, chavePortal: chave });
+    const r = await appRouter.createCaller(contexto(1)).duimp.consultarAPI(consulta);
+    expect(r.sucesso).toBe(true);
+    expect(consultarDuimp).toHaveBeenLastCalledWith(chave, "26BR0000000001-1", undefined);
+  });
+
+  it("quem não é vinculado não usa a chave da empresa", async () => {
+    await appRouter.createCaller(contexto(1)).importadores.salvar({ ...empresa, chavePortal: chave });
+    consultarDuimp.mockClear();
+    const r = await appRouter.createCaller(contexto(2)).duimp.consultarAPI(consulta);
+    expect(r).toMatchObject({ sucesso: false, erro: expect.stringContaining("não está vinculado") });
+    expect(consultarDuimp).not.toHaveBeenCalled();
+  });
+
+  it("empresa sem chave cadastrada", async () => {
+    await appRouter.createCaller(contexto(1)).importadores.salvar(empresa);
+    const r = await appRouter.createCaller(contexto(1)).duimp.consultarAPI(consulta);
+    expect(r).toMatchObject({ sucesso: false, erro: expect.stringContaining("não tem chave de acesso") });
+  });
+
+  it("lista só as empresas com chave que o usuário pode usar", async () => {
+    await appRouter.createCaller(contexto(1)).importadores.salvar({ ...empresa, chavePortal: chave });
+    expect((await appRouter.createCaller(contexto(1)).importadores.comChavePortal()).map((e) => e.id)).toEqual([1]);
+    expect(await appRouter.createCaller(contexto(2)).importadores.comChavePortal()).toEqual([]);
+    expect((await appRouter.createCaller(contexto(9, "admin")).importadores.comChavePortal()).map((e) => e.id)).toEqual([1]);
   });
 });

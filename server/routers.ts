@@ -30,81 +30,15 @@ import {
   getChavePortalEmpresa,
   salvarChavePortalEmpresa,
   removerChavePortalEmpresa,
+  listarEmpresasComChave,
 } from "./db";
 import { cifrar, criptografiaDisponivel, mascarar } from "./cripto";
 import axios from "axios";
 import * as xml2js from "xml2js";
-import { parsearDuimpPDF, type DuimpParsedData } from "./duimpParser";
+import { parsearDuimpPDF } from "./duimpParser";
+import { consultarDuimp, ErroPortalUnico } from "./portalUnico";
+import { chavePortalDaEmpresa } from "./chavePortal";
 import { consultarCadastroSefaz, statusCertificado, ErroSefaz, UFS_ATENDIDAS } from "./sefazCadastro";
-
-/**
- * Mapeia os dados brutos da API do Portal Único para o formato DuimpParsedData.
- */
-function mapearDuimpAPIParaGLME(data: Record<string, unknown>): DuimpParsedData {
-  const get = (obj: Record<string, unknown>, ...keys: string[]): string | undefined => {
-    for (const k of keys) {
-      const v = obj[k];
-      if (v !== undefined && v !== null && v !== "") return String(v);
-    }
-    return undefined;
-  };
-
-  // Importador
-  const importador = (data.importador || data.declarante || {}) as Record<string, unknown>;
-  const endereco = (importador.endereco || {}) as Record<string, unknown>;
-
-  // Adições
-  const itens = (Array.isArray(data.itens) ? data.itens : []) as Record<string, unknown>[];
-  const adicoes = itens.map((item, idx) => ({
-    numero: String(idx + 1),
-    ncm: get(item, "ncm", "codigoNcm") ?? "",
-    descricao: get(item, "descricao", "descricaoMercadoria") ?? "",
-    // Na API cada item vira uma adição: o próprio item é o único da lista
-    itens: [{
-      numero: get(item, "numeroItem", "numero") ?? String(idx + 1),
-      descricao: get(item, "descricao", "descricaoMercadoria") ?? "",
-    }],
-    quantidade: get(item, "quantidade", "quantidadeEstatistica"),
-    valorFOB: get(item, "valorFob", "valorFOB"),
-    valorAduaneiro: get(item, "valorAduaneiro", "valorAduaneiroReal", "baseCalculoII", "baseCalculo"),
-    pesoLiquido: get(item, "pesoLiquido", "pesoLiquidoKg"),
-    baseCalculo: get(item, "baseCalculoII", "baseCalculo"),
-    ii: get(item, "valorII", "impostoImportacao"),
-    ipi: get(item, "valorIPI", "ipi"),
-    pis: get(item, "valorPIS", "pisPasep"),
-    cofins: get(item, "valorCOFINS", "cofins"),
-  }));
-
-  // Tributos federais: soma dos itens (a API não traz o total pronto)
-  const somar = (campo: "ii" | "ipi" | "pis" | "cofins") =>
-    adicoes.reduce((t, a) => t + Math.round(parseFloat(a[campo] || "0") * 100), 0);
-  const [ii, ipi, pis, cofins] = [somar("ii"), somar("ipi"), somar("pis"), somar("cofins")];
-  const taxaSiscomex = get(data, "taxaSiscomex", "taxaUtilizacaoSiscomex");
-  const totalImpostos = ii + ipi + pis + cofins + Math.round(parseFloat(taxaSiscomex || "0") * 100);
-
-  return {
-    numeroDuimp: get(data, "numeroDuimp", "numero"),
-    versaoDuimp: get(data, "versao"),
-    importadorNome: get(importador, "nome", "razaoSocial"),
-    importadorCnpj: get(importador, "cnpj"),
-    importadorEndereco: get(endereco, "logradouro", "endereco"),
-    importadorBairro: get(endereco, "bairro"),
-    importadorCep: get(endereco, "cep"),
-    importadorMunicipio: get(endereco, "municipio", "cidade"),
-    importadorUf: get(endereco, "uf", "estado"),
-    valorFOBDolar: get(data, "valorFobDolar", "totalFobUsd"),
-    valorFOBReais: get(data, "valorFobReais", "totalFobBrl"),
-    taxaCambio: get(data, "taxaCambio"),
-    valorAduaneiro: get(data, "valorAduaneiro"),
-    taxaSiscomex,
-    ii: (ii / 100).toFixed(2),
-    ipi: (ipi / 100).toFixed(2),
-    pis: (pis / 100).toFixed(2),
-    cofins: (cofins / 100).toFixed(2),
-    impostosTotal: totalImpostos > 0 ? (totalImpostos / 100).toFixed(2) : undefined,
-    adicoes,
-  };
-}
 
 // ===== CNPJ API =====
 async function buscarCNPJ(cnpj: string) {
@@ -749,6 +683,10 @@ export const appRouter = router({
         };
       }),
 
+    /** Empresas com chave de acesso que o usuário pode usar na consulta da DUIMP. */
+    comChavePortal: protectedProcedure.query(({ ctx }) =>
+      listarEmpresasComChave(ctx.user.id, ctx.user.role === "admin")),
+
     removerChavePortal: protectedProcedure
       .input(z.object({ importadorId: z.number().int().positive() }))
       .mutation(async ({ input, ctx }) => {
@@ -805,65 +743,31 @@ export const appRouter = router({
         }
       }),
 
-    // Consultar DUIMP via API do Portal Único (proxy)
+    // Consulta a DUIMP na API do Portal Único com a chave de acesso da empresa
     consultarAPI: protectedProcedure
       .input(z.object({
-        numeroDuimp: z.string(),
-        versaoDuimp: z.string().default("0"),
-        clientId: z.string(),
-        clientSecret: z.string(),
+        numeroDuimp: z.string().min(1, "Informe o número da DUIMP"),
+        /** Em branco: versão vigente. */
+        versaoDuimp: z.string().optional(),
+        /** Empresa cuja chave de acesso será usada. */
+        importadorId: z.number().int().positive(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        // Usar a chave é agir em nome da empresa no Portal: só admin ou usuário vinculado
+        if (ctx.user.role !== "admin" && !(await usuarioVinculadoAEmpresa(ctx.user.id, input.importadorId))) {
+          return { sucesso: false as const, erro: "Você não está vinculado a esta empresa, então não pode usar a chave de acesso dela.", dados: null };
+        }
+        const chave = await chavePortalDaEmpresa(input.importadorId);
+        if (!chave) {
+          return { sucesso: false as const, erro: "A empresa não tem chave de acesso do Portal Único cadastrada. Cadastre-a na seção Importador.", dados: null };
+        }
         try {
-          const BASE_URL = "https://portalunico.siscomex.gov.br";
-
-          // Passo 1: Autenticar com clientId + clientSecret
-          const authResp = await axios.post(
-            `${BASE_URL}/portal/api/autenticar`,
-            { clientId: input.clientId, clientSecret: input.clientSecret },
-            {
-              headers: { "Content-Type": "application/json" },
-              timeout: 15000,
-            }
-          );
-
-          const token = authResp.data?.token || authResp.data?.access_token;
-          if (!token) {
-            return { sucesso: false, erro: "Autenticação falhou: token não retornado", dados: null };
-          }
-
-          // Passo 2: Consultar dados da DUIMP
-          const versao = input.versaoDuimp.padStart(4, "0");
-          const duimpResp = await axios.get(
-            `${BASE_URL}/duimp-api/api/ext/duimp/${input.numeroDuimp}/${versao}`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-              },
-              timeout: 15000,
-            }
-          );
-
-          const duimpData = duimpResp.data;
-
-          // Mapear campos da API para o formato do formulário GLME
-          const dados = mapearDuimpAPIParaGLME(duimpData as Record<string, unknown>);
-          return { sucesso: true, dados, dadosBrutos: duimpData };
+          const dados = await consultarDuimp(chave, input.numeroDuimp, input.versaoDuimp);
+          return { sucesso: true as const, dados };
         } catch (err: unknown) {
-          if (axios.isAxiosError(err)) {
-            const status = err.response?.status;
-            const msg = err.response?.data?.message || err.message;
-            if (status === 401 || status === 403) {
-              return { sucesso: false, erro: "Credenciais inválidas ou sem permissão de acesso", dados: null };
-            }
-            if (status === 404) {
-              return { sucesso: false, erro: "DUIMP não encontrada. Verifique o número informado.", dados: null };
-            }
-            return { sucesso: false, erro: `Erro na API: ${msg}`, dados: null };
-          }
+          if (err instanceof ErroPortalUnico) return { sucesso: false as const, erro: err.message, dados: null };
           const msg = err instanceof Error ? err.message : String(err);
-          return { sucesso: false, erro: `Erro de conexão: ${msg}`, dados: null };
+          return { sucesso: false as const, erro: `Erro de conexão com o Portal Único: ${msg}`, dados: null };
         }
       }),
   }),

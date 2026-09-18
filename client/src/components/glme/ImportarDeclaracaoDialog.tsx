@@ -1,17 +1,25 @@
-import { ChevronDown, FileCode2, FileText, Link2, Loader2, UploadCloud } from "lucide-react";
-import { useRef, useState, type DragEvent } from "react";
+import { AlertTriangle, ChevronDown, FileCode2, FileText, KeyRound, Link2, Loader2, UploadCloud } from "lucide-react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 export interface ConsultaDuimpAPI {
   numeroDuimp: string;
-  versaoDuimp: string;
-  clientId: string;
-  clientSecret: string;
+  /** Em branco: versão vigente. */
+  versaoDuimp?: string;
+  /** Empresa cuja chave de acesso do Portal Único será usada. */
+  importadorId: number;
+}
+
+export interface EmpresaComChave {
+  id: number;
+  razaoSocial: string;
+  cnpj: string;
 }
 
 interface Props {
@@ -22,12 +30,29 @@ interface Props {
   processando: boolean;
   onConsultarAPI: (dados: ConsultaDuimpAPI) => void;
   consultandoAPI: boolean;
+  /** Empresas com chave de acesso que o usuário pode usar. */
+  empresasComChave: EmpresaComChave[];
+  /** Empresa da seção Importador, sugerida quando tiver chave. */
+  empresaSugeridaId?: number;
 }
 
-export function ImportarDeclaracaoDialog({ open, onOpenChange, onArquivo, processando, onConsultarAPI, consultandoAPI }: Props) {
+export function ImportarDeclaracaoDialog({
+  open, onOpenChange, onArquivo, processando, onConsultarAPI, consultandoAPI, empresasComChave, empresaSugeridaId,
+}: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [arrastando, setArrastando] = useState(false);
-  const [api, setApi] = useState<ConsultaDuimpAPI>({ numeroDuimp: "", versaoDuimp: "0", clientId: "", clientSecret: "" });
+  const [numeroDuimp, setNumeroDuimp] = useState("");
+  const [versaoDuimp, setVersaoDuimp] = useState("");
+  const [empresaId, setEmpresaId] = useState<number | undefined>();
+
+  // Ao abrir: a empresa da seção Importador, se tiver chave; senão, a única disponível
+  useEffect(() => {
+    if (!open) return;
+    const sugerida = empresasComChave.find((e) => e.id === empresaSugeridaId);
+    setEmpresaId(sugerida?.id ?? (empresasComChave.length === 1 ? empresasComChave[0].id : undefined));
+  }, [open, empresaSugeridaId, empresasComChave]);
+
+  const empresa = empresasComChave.find((e) => e.id === empresaId);
 
   const escolher = (arquivo?: File) => {
     if (arquivo) onArquivo(arquivo);
@@ -95,34 +120,54 @@ export function ImportarDeclaracaoDialog({ open, onOpenChange, onArquivo, proces
             <ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
           </CollapsibleTrigger>
           <CollapsibleContent className="space-y-3 pt-2">
-            <p className="rounded-xl bg-secondary px-3 py-2 text-xs text-muted-foreground">
-              Requer credenciais de acesso à API do Portal Único (clientId e clientSecret), vinculadas a certificado ICP-Brasil.
+            <p className="rounded-xl bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+              A consulta usa a chave de acesso do Portal Único cadastrada na empresa (seção Importador › Cadastro da empresa)
+              e traz todos os itens, com valor aduaneiro e tributos, para o cálculo do ICMS.
             </p>
-            <div className="grid grid-cols-[1fr_88px] gap-3">
+
+            {empresasComChave.length === 0 ? (
+              <p className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                Nenhuma empresa com chave de acesso disponível para você. Cadastre a chave em Importador › Cadastro da empresa.
+              </p>
+            ) : empresasComChave.length === 1 ? (
+              <p className="flex items-center gap-2 text-sm">
+                <KeyRound className="size-4 shrink-0 text-brand-sky" />
+                <span>Chave de acesso de <strong className="font-medium">{empresasComChave[0].razaoSocial}</strong></span>
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="api-empresa">Empresa (chave de acesso)</Label>
+                <Select value={empresaId ? String(empresaId) : ""} onValueChange={(v) => setEmpresaId(Number(v))}>
+                  <SelectTrigger id="api-empresa" className="w-full">
+                    <SelectValue placeholder="Escolha a empresa" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {empresasComChave.map((e) => (
+                      <SelectItem key={e.id} value={String(e.id)}>{e.razaoSocial}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="grid grid-cols-[1fr_96px] gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="api-numero">Número da DUIMP</Label>
-                <Input id="api-numero" placeholder="25BR0000000000-0" value={api.numeroDuimp} onChange={(e) => setApi({ ...api, numeroDuimp: e.target.value })} />
+                <Input id="api-numero" placeholder="26BR0000000000-0" value={numeroDuimp} onChange={(e) => setNumeroDuimp(e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="api-versao">Versão</Label>
-                <Input id="api-versao" value={api.versaoDuimp} onChange={(e) => setApi({ ...api, versaoDuimp: e.target.value })} />
+                <Input id="api-versao" inputMode="numeric" placeholder="vigente" value={versaoDuimp} onChange={(e) => setVersaoDuimp(e.target.value)} />
               </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="api-client-id">Client ID</Label>
-              <Input id="api-client-id" autoComplete="off" value={api.clientId} onChange={(e) => setApi({ ...api, clientId: e.target.value })} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="api-client-secret">Client Secret</Label>
-              <Input id="api-client-secret" type="password" autoComplete="off" value={api.clientSecret} onChange={(e) => setApi({ ...api, clientSecret: e.target.value })} />
             </div>
             <Button
               className="w-full"
-              disabled={!api.numeroDuimp || !api.clientId || !api.clientSecret || consultandoAPI}
-              onClick={() => onConsultarAPI({ ...api, versaoDuimp: api.versaoDuimp || "0" })}
+              disabled={!numeroDuimp.trim() || !empresa || consultandoAPI}
+              onClick={() => empresa && onConsultarAPI({ numeroDuimp: numeroDuimp.trim(), versaoDuimp: versaoDuimp.trim() || undefined, importadorId: empresa.id })}
             >
               {consultandoAPI ? <Loader2 className="animate-spin" /> : <Link2 />}
-              {consultandoAPI ? "Consultando…" : "Consultar DUIMP"}
+              {consultandoAPI ? "Consultando o Portal Único…" : "Consultar DUIMP"}
             </Button>
           </CollapsibleContent>
         </Collapsible>
