@@ -12,15 +12,12 @@ import https from "node:https";
 import tls from "node:tls";
 import axios from "axios";
 import * as xml2js from "xml2js";
+import { cadastroDaUF, linkConsultaIE, UFS_COM_WEBSERVICE } from "@shared/sefazUF";
 import { ICP_BRASIL_RAIZ_V10 } from "./certs/icpBrasil";
 
-/** Endereços do CadConsultaCadastro4 por UF (fonte: portal de webservices de cada SEFAZ). */
-const WEBSERVICES: Record<string, string> = {
-  // https://www.sefaz.pe.gov.br/Servicos/nota-fiscal-eletronica/Paginas/url-web-services-prod-homolog.aspx
-  PE: "https://nfe.sefaz.pe.gov.br/nfe-service/services/CadConsultaCadastro4",
-};
-
-export const UFS_ATENDIDAS = Object.keys(WEBSERVICES);
+// Endereços por UF em shared/sefazUF.ts (Portal da NF-e). Todos os servidores usam a cadeia
+// ICP-Brasil v10 ou uma raiz pública já presente no Node (MG: Sectigo R46).
+export const UFS_ATENDIDAS = UFS_COM_WEBSERVICE;
 
 const SOAP_ACTION = "http://www.portalfiscal.inf.br/nfe/wsdl/CadConsultaCadastro4/consultaCadastro";
 
@@ -228,10 +225,15 @@ export async function interpretarRespostaCadastro(xml: string): Promise<Resultad
 export async function consultarCadastroSefaz(cnpjInformado: string, ufInformada = "PE"): Promise<ResultadoConsultaCadastro> {
   const cnpj = cnpjInformado.replace(/\D/g, "");
   if (cnpj.length !== 14) throw new ErroSefaz("CNPJ inválido.", "resposta");
-  const uf = ufInformada.toUpperCase();
-  const url = WEBSERVICES[uf];
+  const uf = ufInformada.trim().toUpperCase();
+  const cadastro = cadastroDaUF(uf);
+  if (!cadastro) throw new ErroSefaz(`UF inválida: ${uf || "(vazia)"}.`, "uf");
+  const url = cadastro.webservice;
   if (!url) {
-    throw new ErroSefaz(`Consulta à SEFAZ disponível para: ${UFS_ATENDIDAS.join(", ")}. UF informada: ${uf}.`, "uf");
+    throw new ErroSefaz(
+      `A SEFAZ de ${cadastro.nome} não oferece consulta automática de cadastro. Consulte em ${linkConsultaIE(uf)}`,
+      "uf",
+    );
   }
 
   const cert = lerCertificado();

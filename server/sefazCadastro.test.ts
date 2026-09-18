@@ -6,6 +6,7 @@ import {
   montarEnvelopeConsulta,
   statusCertificado,
 } from "./sefazCadastro";
+import { CADASTRO_UF, LINK_CCC, UFS_COM_WEBSERVICE, linkConsultaIE } from "@shared/sefazUF";
 
 const envelope = (infCons: string) =>
   `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Body>` +
@@ -89,7 +90,33 @@ describe("SEFAZ - certificado", () => {
     await expect(consultarCadastroSefaz("00000000000191")).rejects.toMatchObject({ tipo: "certificado" });
   });
 
-  it("recusa UF sem webservice cadastrado", async () => {
-    await expect(consultarCadastroSefaz("00000000000191", "SP")).rejects.toMatchObject({ tipo: "uf" });
+  it("recusa UF sem webservice, indicando o site de consulta da SEFAZ", async () => {
+    await expect(consultarCadastroSefaz("00000000000191", "RJ")).rejects.toMatchObject({ tipo: "uf" });
+    await expect(consultarCadastroSefaz("00000000000191", "RJ")).rejects.toThrow("fazenda.rj.gov.br");
+    await expect(consultarCadastroSefaz("00000000000191", "XX")).rejects.toThrow("UF inválida");
+  });
+});
+
+describe("SEFAZ - tabela de UFs", () => {
+  it("cobre as 27 UFs, cada uma com um link de consulta https ou http", () => {
+    expect(Object.keys(CADASTRO_UF)).toHaveLength(27);
+    for (const [uf, c] of Object.entries(CADASTRO_UF)) expect(c.consulta, uf).toMatch(/^https?:\/\//);
+  });
+
+  it("tem consulta automática nas 15 UFs do Portal da NF-e", () => {
+    expect([...UFS_COM_WEBSERVICE].sort()).toEqual(
+      ["AC", "AM", "BA", "ES", "GO", "MG", "MS", "MT", "PB", "PE", "PR", "RN", "RS", "SC", "SP"],
+    );
+  });
+
+  it("AC, ES, PB, RN e SC consultam pela SEFAZ Virtual do RS", () => {
+    for (const uf of ["AC", "ES", "PB", "RN", "SC"]) {
+      expect(CADASTRO_UF[uf].webservice).toBe("https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx");
+    }
+  });
+
+  it("UF desconhecida cai no CCC nacional", () => {
+    expect(linkConsultaIE("XX")).toBe(LINK_CCC);
+    expect(linkConsultaIE(" pe ")).toBe("http://www.sintegra.sefaz.pe.gov.br/");
   });
 });

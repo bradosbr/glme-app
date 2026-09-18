@@ -55,6 +55,7 @@ import { AdicaoFiscal } from "@/components/glme/AdicaoFiscal";
 import { ImportarDeclaracaoDialog } from "@/components/glme/ImportarDeclaracaoDialog";
 import { ValoresAdicao } from "@/components/glme/ValoresAdicao";
 import { SituacaoCadastral, type EstadoConsultaSefaz } from "@/components/glme/SituacaoCadastral";
+import { cadastroDaUF } from "@shared/sefazUF";
 
 const SECOES = [
   { id: "uf", rotulo: "UF" },
@@ -565,10 +566,16 @@ export default function Home() {
   const [consultaSefaz, setConsultaSefaz] = useState<EstadoConsultaSefaz>({ estado: "inativo" });
   const consultarSefazMutation = trpc.sefaz.consultarCadastro.useMutation();
 
+  /** Consulta a IE na SEFAZ da UF do importador; sem webservice na UF, indica o site de consulta. */
   const consultarSefaz = async (cnpj: string, ufInformada: string) => {
-    const uf = (ufInformada || "PE").toUpperCase();
-    if (uf !== "PE") {
-      setConsultaSefaz({ estado: "nao_encontrado", uf, mensagem: "a consulta automática da inscrição estadual está disponível para contribuintes de Pernambuco." });
+    const uf = (ufInformada || "").trim().toUpperCase();
+    const cadastro = cadastroDaUF(uf);
+    if (!cadastro) {
+      setConsultaSefaz({ estado: "erro", uf: uf || "UF", mensagem: "Informe a UF do importador para consultar a inscrição estadual." });
+      return;
+    }
+    if (!cadastro.webservice) {
+      setConsultaSefaz({ estado: "sem_servico", uf });
       return;
     }
     setConsultaSefaz({ estado: "consultando", uf });
@@ -620,7 +627,8 @@ export default function Home() {
         updateImportador("telefone", d.telefone);
         setCnpjStatus("ok");
         toast.success(`Empresa encontrada: ${d.razaoSocial}`);
-        // Inscrição estadual e situação cadastral vêm da SEFAZ (a Receita não tem esse dado)
+        // Inscrição estadual e situação cadastral vêm da SEFAZ da UF do importador
+        // (a mesma UF que a Receita acabou de preencher na seção) — a Receita não tem esse dado
         void consultarSefaz(d.cnpj, d.uf);
       }
     } catch (e: any) {
@@ -848,7 +856,7 @@ export default function Home() {
           )}
         >
           <div className="mb-5 flex flex-col gap-2 rounded-xl bg-secondary/60 p-3 sm:flex-row sm:items-end">
-            <Campo rotulo="Consultar CNPJ na Receita Federal e na SEFAZ-PE" htmlFor="cnpj-busca" className="flex-1">
+            <Campo rotulo="Consultar CNPJ (Receita Federal e SEFAZ da UF)" htmlFor="cnpj-busca" className="flex-1">
               <Input
                 id="cnpj-busca"
                 inputMode="numeric"

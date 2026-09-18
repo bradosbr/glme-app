@@ -40,6 +40,7 @@ server/
   scripts/seedAdmin.ts      # pnpm db:seed — cria o admin inicial
   scripts/migrarMysqlParaPostgres.ts  # pnpm db:migrar-dados — migração única MySQL -> Postgres
 shared/                     # Tipos e constantes compartilhados
+  sefazUF.ts                # Por UF: webservice de consulta cadastral (15 UFs) e link de consulta (27)
 drizzle/
   schema.ts                 # Schema do banco (users, importadores, recintos)
   0000_*.sql, 0001_*.sql    # Migrações Postgres (baseline + unaccent/RLS)
@@ -69,7 +70,7 @@ vercel.json                 # Build, estáticos, região, maxDuration e fallback
 | `PORT` | Não | Porta do servidor local (padrão 3000; ignorada no Vercel) |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Só no seed | `db:seed` exige `ADMIN_PASSWORD` (mín. 6 caracteres, diferente de `admin123`) |
 | `MYSQL_URL` | Só na migração | Origem MySQL para `db:migrar-dados` (uso único) |
-| `CERTIFICADO_A1_BASE64` | Não | Arquivo .pfx do e-CNPJ A1 em base64 — consulta de IE na SEFAZ-PE |
+| `CERTIFICADO_A1_BASE64` | Não | Arquivo .pfx do e-CNPJ A1 em base64 — consulta de IE nas SEFAZ |
 | `CERTIFICADO_A1_SENHA` | Com o certificado | Senha do .pfx |
 
 Na connection string, substitua `[YOUR-PASSWORD]` **inclusive os colchetes** pela senha.
@@ -153,8 +154,12 @@ A migração vai para a produção **antes** do código novo, então a versão a
   tributação normal. Sem os valores de cada adição (ex.: extrato da DUIMP em PDF), o cálculo cai para os totais
   da declaração, com aviso.
 - **PDF da guia**: o campo 5.4 da frente traz uma linha por alíquota; o verso, a memória completa (VT, VTI, VF).
-- **SEFAZ-PE**: a consulta usa a raiz ICP-Brasil v10 embarcada (conferida contra o repositório do ITI) — nunca
-  desligar a verificação TLS. Rotas `sefaz.*` exigem login porque usam o certificado da empresa.
+- **Inscrição estadual**: após a consulta do CNPJ na Receita, o app consulta a SEFAZ da UF do importador.
+  Webservice CadConsultaCadastro4 em 15 UFs (AM, BA, GO, MG, MS, MT, PE, PR, RS, SP e, pela SVRS, AC, ES, PB,
+  RN, SC — Portal da NF-e). As demais (AL, AP, CE, DF, MA, PA, PI, RJ, RO, RR, SE, TO) não têm o serviço: a tela
+  mostra o link oficial de consulta da UF e o CCC nacional. Endereços em `shared/sefazUF.ts`.
+- **TLS das SEFAZ**: raiz ICP-Brasil v10 embarcada (conferida contra o repositório do ITI); MG usa Sectigo R46,
+  já presente no Node. Nunca desligar a verificação TLS. Rotas `sefaz.*` exigem login (usam o certificado da empresa).
 
 ## Funcionalidades principais
 
@@ -166,9 +171,9 @@ A migração vai para a produção **antes** do código novo, então a versão a
 - Filtragem pela lista negativa do Edital 060/2025 (NCMs com tributação normal vs diferimento)
 - Cálculo automático de ICMS por alíquota, com rateio das despesas aduaneiras e memória de cálculo na guia
 - Geração de PDF com layout oficial da GLME (jsPDF, no navegador)
-- Cadastro de importadores com busca por CNPJ (BrasilAPI / ReceitaWS) e inscrição estadual pela SEFAZ-PE
+- Cadastro de importadores com busca por CNPJ (BrasilAPI / ReceitaWS) e inscrição estadual pela SEFAZ da UF
 - Login local (usuário/senha, scrypt) e administração de usuários
-- 98 testes automatizados (vitest)
+- 102 testes automatizados (vitest)
 
 ## Comandos
 
