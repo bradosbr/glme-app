@@ -139,6 +139,9 @@ A migração vai para a produção **antes** do código novo, então a versão a
   session pooler (5432). Não use o transaction pooler (6543) para migrações.
 - As duas primeiras migrações foram aplicadas fora do drizzle-kit e registradas manualmente em
   `drizzle.__drizzle_migrations`; o `db:push` não as reaplica.
+- v1.1.0 (18/09/2026): 0002–0004 aplicadas na produção por SQL e registradas em `drizzle.__drizzle_migrations`
+  com o mesmo hash do arquivo. Cópia de users, importadores e recintos antes da migração no esquema
+  `backup_20260918` (sem acesso público) — pode ser removido quando a versão estiver estável.
 
 ## Comportamentos que não são óbvios
 
