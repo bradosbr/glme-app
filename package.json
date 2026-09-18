@@ -13,7 +13,8 @@
     "test": "vitest run",
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
     "db:seed": "tsx server/scripts/seedAdmin.ts",
-    "db:migrar-dados": "tsx server/scripts/migrarMysqlParaPostgres.ts"
+    "db:migrar-dados": "tsx server/scripts/migrarMysqlParaPostgres.ts",
+    "certificado:configurar": "tsx server/scripts/configurarCertificado.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

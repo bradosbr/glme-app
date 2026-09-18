@@ -40,6 +40,7 @@ server/
   cripto.ts                 # AES-256-GCM para segredos no banco (CHAVE_CRIPTOGRAFIA)
   chavePortal.ts            # Decifra a chave de acesso do Portal Único da empresa, só no servidor
   scripts/seedAdmin.ts      # pnpm db:seed — cria o admin inicial
+  scripts/configurarCertificado.ts  # pnpm certificado:configurar — grava o e-CNPJ A1 no .env (senha sem eco)
   scripts/migrarMysqlParaPostgres.ts  # pnpm db:migrar-dados — migração única MySQL -> Postgres
 shared/                     # Tipos e constantes compartilhados
   sefazUF.ts                # Por UF: webservice de consulta cadastral (15 UFs) e link de consulta (27)
@@ -205,4 +206,5 @@ pnpm test             # Testes (vitest)
 pnpm db:push          # Gerar e aplicar migrações (usa DIRECT_URL)
 pnpm db:seed          # Criar admin inicial (exige ADMIN_PASSWORD)
 pnpm db:migrar-dados  # Migração única MySQL -> Postgres (MYSQL_URL + DIRECT_URL)
+pnpm certificado:configurar "C:\caminho\cert.pfx"  # Confere o A1 (titular/validade) e grava no .env
 ```
