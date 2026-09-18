@@ -117,26 +117,47 @@ async function obter<T>(sessao: Sessao, caminho: string): Promise<T> {
 // Tipos da resposta (só os campos usados)
 // ---------------------------------------------------------------------------
 
+/**
+ * Valores numéricos da resposta: a especificação diz "number", mas o Portal devolve
+ * alguns como texto (ex.: pesoLiquido "12.50000"). Tudo passa por num().
+ */
+type Numero = number | string;
+
+export function num(v: Numero | null | undefined): number {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  const t = String(v ?? "").trim();
+  if (!t) return 0;
+  // Aceita "1234.56" e "1.234,56"
+  const normalizado = t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t;
+  const n = Number(normalizado);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Campos de texto que podem chegar como número (NCM, versão, NI): sempre como texto. */
+export function texto(v: unknown): string {
+  return v === undefined || v === null ? "" : String(v).trim();
+}
+
 type TipoTributo = "II" | "IPI" | "PIS" | "COFINS" | "TAXA_UTILIZACAO" | string;
 
 interface TributoCalculado {
   tipo?: TipoTributo;
-  valoresBRL?: { devido?: number; aRecolher?: number };
+  valoresBRL?: { devido?: Numero; aRecolher?: Numero };
 }
 
 export interface ItemDuimpAPI {
   status?: string;
   identificacao?: { numeroItem?: number };
-  produto?: { ncm?: string };
-  mercadoria?: { pesoLiquido?: number; descricao?: string };
+  produto?: { ncm?: string | number };
+  mercadoria?: { pesoLiquido?: Numero; descricao?: string };
   tributos?: {
-    mercadoria?: { valorAduaneiroBRL?: number };
+    mercadoria?: { valorAduaneiroBRL?: Numero };
     tributosCalculados?: TributoCalculado[];
   };
 }
 
 export interface DuimpGeralAPI {
-  identificacao?: { numero?: string; versao?: string; dataRegistro?: string; importador?: { ni?: string } };
+  identificacao?: { numero?: string; versao?: string | number; dataRegistro?: string; importador?: { ni?: string | number } };
   adicoes?: { numero?: number; itens?: number[] }[];
   tributos?: { tributosCalculados?: TributoCalculado[] };
   quantidadeItens?: number;
@@ -149,7 +170,8 @@ export interface DuimpGeralAPI {
 /** Valor do tributo usado na base do ICMS: o valor a recolher (como na DI), ou o devido. */
 function valorTributo(lista: TributoCalculado[] | undefined, tipo: TipoTributo): number {
   const t = (lista ?? []).find((x) => x.tipo === tipo);
-  return t?.valoresBRL?.aRecolher ?? t?.valoresBRL?.devido ?? 0;
+  const aRecolher = t?.valoresBRL?.aRecolher;
+  return num(aRecolher !== undefined && aRecolher !== null && aRecolher !== "" ? aRecolher : t?.valoresBRL?.devido);
 }
 
 const centavos = (v: number) => Math.round((v || 0) * 100);
@@ -179,7 +201,7 @@ export function mapearDuimpAPI(geral: DuimpGeralAPI, itens: ItemDuimpAPI[]): Dui
   } else {
     const porNcm = new Map<string, ItemDuimpAPI[]>();
     for (const i of ativos) {
-      const ncm = i.produto?.ncm ?? "";
+      const ncm = texto(i.produto?.ncm);
       porNcm.set(ncm, [...(porNcm.get(ncm) ?? []), i]);
     }
     grupos = Array.from(porNcm.values()).map((lista, idx) => ({ numero: String(idx + 1), itens: lista }));
@@ -192,13 +214,13 @@ export function mapearDuimpAPI(geral: DuimpGeralAPI, itens: ItemDuimpAPI[]): Dui
       numero: String(i.identificacao?.numeroItem ?? ""),
       descricao: (i.mercadoria?.descricao ?? "").replace(/\s+/g, " ").trim(),
     }));
-    const peso = g.itens.reduce((t, i) => t + (i.mercadoria?.pesoLiquido ?? 0), 0);
+    const peso = g.itens.reduce((t, i) => t + num(i.mercadoria?.pesoLiquido), 0);
     return {
       numero: g.numero,
-      ncm: g.itens[0]?.produto?.ncm ?? "",
+      ncm: texto(g.itens[0]?.produto?.ncm),
       descricao: itensDaAdicao.map((i) => i.descricao).filter(Boolean).join(" / "),
       itens: itensDaAdicao,
-      valorAduaneiro: reais(soma(g.itens, (i) => i.tributos?.mercadoria?.valorAduaneiroBRL ?? 0)),
+      valorAduaneiro: reais(soma(g.itens, (i) => num(i.tributos?.mercadoria?.valorAduaneiroBRL))),
       ii: reais(soma(g.itens, (i) => valorTributo(i.tributos?.tributosCalculados, "II"))),
       ipi: reais(soma(g.itens, (i) => valorTributo(i.tributos?.tributosCalculados, "IPI"))),
       pis: reais(soma(g.itens, (i) => valorTributo(i.tributos?.tributosCalculados, "PIS"))),
@@ -219,10 +241,10 @@ export function mapearDuimpAPI(geral: DuimpGeralAPI, itens: ItemDuimpAPI[]): Dui
   const tributos = total("ii") + total("ipi") + total("pis") + total("cofins");
 
   return {
-    numeroDuimp: geral.identificacao?.numero,
-    versaoDuimp: geral.identificacao?.versao,
+    numeroDuimp: texto(geral.identificacao?.numero) || undefined,
+    versaoDuimp: texto(geral.identificacao?.versao) || undefined,
     dataRegistro: dataBR(geral.identificacao?.dataRegistro),
-    importadorCnpj: geral.identificacao?.importador?.ni,
+    importadorCnpj: texto(geral.identificacao?.importador?.ni) || undefined,
     valorAduaneiro: reais(total("valorAduaneiro")),
     ii: reais(total("ii")),
     ipi: reais(total("ipi")),

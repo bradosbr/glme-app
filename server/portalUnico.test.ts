@@ -55,6 +55,22 @@ describe("Portal Único - conversão da DUIMP", () => {
     expect(r.adicoes!.map((a) => [a.ncm, a.valorAduaneiro])).toEqual([["84713012", "150.00"], ["24022000", "70.00"]]);
   });
 
+  it("aceita números vindos como texto (peso, valores) e NCM/versão vindos como número", () => {
+    const r = mapearDuimpAPI(
+      { identificacao: { numero: "26BR00000000011", versao: 2 as unknown as string, importador: { ni: "11111111000111" } }, adicoes: [{ numero: 1, itens: [1, 2] }] },
+      [
+        { status: "ATIVO", identificacao: { numeroItem: 1 }, produto: { ncm: 84713012 as unknown as string },
+          mercadoria: { pesoLiquido: "12.50000" }, tributos: { mercadoria: { valorAduaneiroBRL: "1000.10" },
+          tributosCalculados: [{ tipo: "IPI", valoresBRL: { aRecolher: "150.00" } }] } },
+        { status: "ATIVO", identificacao: { numeroItem: 2 }, produto: { ncm: "84713012" },
+          mercadoria: { pesoLiquido: 7.5 }, tributos: { mercadoria: { valorAduaneiroBRL: 500 },
+          tributosCalculados: [{ tipo: "IPI", valoresBRL: { devido: 75 } }] } },
+      ],
+    );
+    expect(r.versaoDuimp).toBe("2");
+    expect(r.adicoes![0]).toMatchObject({ ncm: "84713012", pesoLiquido: "20.00000", valorAduaneiro: "1500.10", ipi: "225.00" });
+  });
+
   it("sem taxa no total da declaração, soma a taxa dos itens", () => {
     const r = mapearDuimpAPI({}, [item(1, "1", 10, tributos(0, 0, 0, 0, 115.67)), item(2, "1", 10, tributos(0, 0, 0, 0, 115.67))]);
     expect(r.taxaSiscomex).toBe("231.34");
