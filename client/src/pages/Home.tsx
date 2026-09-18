@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { gerarGLMEPDF } from "@/lib/glmePDF";
 import { extrairTextoPDF } from "@/lib/extrairTextoPDF";
 import { Button } from "@/components/ui/button";
@@ -18,9 +18,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useGLMEForm, type AdicaoTributada, type ProdutoAdicao } from "@/hooks/useGLMEForm";
+import { useGLMEForm, type AdicaoTributada, type ProdutoAdicao, type ValoresAdicaoForm } from "@/hooks/useGLMEForm";
 import { ESTADOS_BRASIL, TIPOS_DOCUMENTO, TRATAMENTOS_TRIBUTARIOS } from "@/lib/formData";
 import {
+  AlertTriangle,
   Boxes,
   Building2,
   Calculator,
@@ -44,12 +45,16 @@ import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { ncmNaListaNegativa } from "@/lib/listaNegativa";
-import { consultarAliquotaNCM, formatarMoeda } from "@/lib/aliquotasICMS";
+import { formatarMoeda } from "@/lib/aliquotasICMS";
+import { calcularFormulario, paraNumero, valoresDaDeclaracao } from "@/lib/calculoFormulario";
+import { formatarAliquota, formatarDivisor } from "@/lib/calculoICMS";
 import { cn } from "@/lib/utils";
 import { Secao } from "@/components/glme/Secao";
 import { BlocoAcao } from "@/components/glme/BlocoAcao";
 import { AdicaoFiscal } from "@/components/glme/AdicaoFiscal";
 import { ImportarDeclaracaoDialog } from "@/components/glme/ImportarDeclaracaoDialog";
+import { ValoresAdicao } from "@/components/glme/ValoresAdicao";
+import { SituacaoCadastral, type EstadoConsultaSefaz } from "@/components/glme/SituacaoCadastral";
 
 const SECOES = [
   { id: "uf", rotulo: "UF" },
@@ -94,6 +99,36 @@ function Campo({ rotulo, htmlFor, className, children }: { rotulo: string; htmlF
   );
 }
 
+function CampoValor({ id, rotulo, valor, onChange }: { id: string; rotulo: string; valor?: string; onChange: (v: string) => void }) {
+  return (
+    <Campo rotulo={rotulo} htmlFor={id}>
+      <Input
+        id={id}
+        type="number"
+        inputMode="decimal"
+        step="0.01"
+        min="0"
+        value={valor ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="0,00"
+        className="tabular-nums"
+      />
+    </Campo>
+  );
+}
+
+function LinhaCalculo({ rotulo, detalhe, valor, destaque }: { rotulo: string; detalhe?: string; valor: number; destaque?: boolean }) {
+  return (
+    <div className={cn("flex items-center justify-between gap-4 px-4 py-2.5", destaque && "bg-brand-navy py-3.5 text-white")}>
+      <dt className={cn("min-w-0", destaque ? "font-medium" : "text-muted-foreground")}>
+        {rotulo}
+        {detalhe && <span className="block text-xs tabular-nums opacity-80">{detalhe}</span>}
+      </dt>
+      <dd className={cn("shrink-0 whitespace-nowrap font-medium tabular-nums", destaque && "text-lg font-semibold")}>R$ {formatarMoeda(valor)}</dd>
+    </div>
+  );
+}
+
 function SelectUF({ id, value, onChange, placeholder = "Selecione" }: { id?: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
   return (
     <Select value={value} onValueChange={onChange}>
@@ -119,6 +154,7 @@ export default function Home() {
     updateAdquirente,
     updateDocumento,
     updateProduto,
+    updateTributada,
     updateICMSCalculo,
     addProduto,
     removeProduto,
@@ -200,29 +236,19 @@ export default function Home() {
   /**
    * Separa as adições da declaração: diferimento (entram na GLME) e tributação
    * normal (NCM na lista negativa, recolhimento integral, fora da GLME).
-   * A alíquota é sempre consultada pela NCM completa no Anexo I.
+   * Os valores de cada adição seguem junto: o ICMS é calculado por alíquota
+   * (lib/calculoFormulario), não mais no momento da importação.
    */
-  const separarAdicoes = (
-    adicoes: any[],
-    valorAduaneiroDe: (ad: any) => string | undefined,
-    calcularICMS?: (ad: any, aliquota: number) => number,
-  ) => {
+  const separarAdicoes = (adicoes: any[], valoresDe: (ad: any) => ValoresAdicaoForm | undefined) => {
     const produtos: ProdutoAdicao[] = [];
     const tributadas: AdicaoTributada[] = [];
-    const textos: string[] = [];
     for (const ad of adicoes) {
       const ncm = String(ad.ncm || "");
       const numero = String(ad.numero || "");
       const itens = Array.isArray(ad.itens) ? ad.itens : undefined;
+      const valores = valoresDe(ad);
       if (ncmNaListaNegativa(ncm)) {
-        const { aliquota } = consultarAliquotaNCM(ncm);
-        const valorICMS = calcularICMS?.(ad, aliquota);
-        tributadas.push({ adicao: numero, ncm, descricao: ad.descricao, itens, valorICMS });
-        textos.push(
-          valorICMS !== undefined
-            ? `ADIÇÃO ${numero} - TRIBUTAÇÃO NORMAL - ALIQUOTA ${aliquota}% - VALOR DO ICMS - R$ ${formatarMoeda(valorICMS)}\nA ADIÇÃO ${numero} É RECOLHIMENTO INTEGRAL, POR ISSO ELA NÃO CONSTA NA GLME.`
-            : `ADIÇÃO ${numero} - NCM ${ncm} - TRIBUTAÇÃO NORMAL - ALIQUOTA ${aliquota}%\nA ADIÇÃO ${numero} É RECOLHIMENTO INTEGRAL, POR ISSO ELA NÃO CONSTA NA GLME.`,
-        );
+        tributadas.push({ adicao: numero, ncm, descricao: ad.descricao, itens, valores });
       } else {
         produtos.push({
           adicao: numero,
@@ -232,20 +258,30 @@ export default function Home() {
           fundamentoLegal: "",
           valor: "",
           descricao: ad.descricao || undefined,
-          valorAduaneiro: valorAduaneiroDe(ad),
+          valorAduaneiro: valores?.valorAduaneiro,
           itens,
+          valores,
         });
       }
     }
-    return { produtos, tributadas, textos };
+    return { produtos, tributadas };
   };
 
-  const registrarTributadas = (textos: string[]) => {
-    if (textos.length === 0) return;
-    const textoAtual = formData.icmsCalculo.textoAdicional || "";
-    const novoTexto = textoAtual ? `${textoAtual}\n\n${textos.join("\n\n")}` : textos.join("\n\n");
-    updateICMSCalculo("textoAdicional", novoTexto);
-    toast.info(`${textos.length} adição(ões) com tributação normal registrada(s) no texto complementar do ICMS.`);
+  const aplicarAdicoes = (produtos: ProdutoAdicao[], tributadas: AdicaoTributada[]) => {
+    substituirAdicoes(produtos, tributadas);
+    if (tributadas.length > 0) {
+      toast.info(`${tributadas.length} adição(ões) de tributação normal ficaram fora da guia (lista negativa do PEAP).`);
+    }
+  };
+
+  /** Nova declaração: despesas da anterior não podem ficar para trás. */
+  const reiniciarDespesas = (dados: { taxaSiscomex?: string; outrasReceitas?: { codigo: string; valor: string }[] }) => {
+    updateICMSCalculo("taxaSiscomex", paraNumero(dados.taxaSiscomex) > 0 ? String(dados.taxaSiscomex) : "");
+    updateICMSCalculo("outrasDespesas", "");
+    updateICMSCalculo("iofCambio", "");
+    updateICMSCalculo("afrmm", "");
+    updateICMSCalculo("incluirAFRMM", false);
+    updateICMSCalculo("outrasReceitas", dados.outrasReceitas ?? []);
   };
 
   const buscarImportadorInterno = async (cnpjRaw: string) => {
@@ -335,18 +371,22 @@ export default function Home() {
       if (recintoEncontrado?.uf) { updateDocumento("ufDesembaraco", recintoEncontrado.uf); preenchidos++; }
     }
 
-    // === ICMS ===
-    if (dados.impostosTotal && parseFloat(dados.impostosTotal) > 0) {
-      updateICMSCalculo("impostos", dados.impostosTotal);
+    // === ICMS: tributos federais e Taxa Siscomex em campos separados ===
+    const tributosDuimp = ["ii", "ipi", "pis", "cofins"].reduce((t, k) => t + Math.round(paraNumero(dados[k]) * 100), 0) / 100;
+    if (tributosDuimp > 0) {
+      updateICMSCalculo("impostos", tributosDuimp.toFixed(2));
       preenchidos++;
     }
+    reiniciarDespesas({ taxaSiscomex: dados.taxaSiscomex });
 
     // === ADIÇÕES / ITENS ===
+    // A API traz valores por item; o extrato em PDF, não (o cálculo fica pelos totais)
     if (dados.adicoes?.length > 0) {
-      const { produtos, tributadas, textos } = separarAdicoes(dados.adicoes, (ad) => ad.baseCalculo);
-      substituirAdicoes(produtos, tributadas);
+      const { produtos, tributadas } = separarAdicoes(dados.adicoes, (ad) =>
+        valoresDaDeclaracao({ valorAduaneiro: ad.valorAduaneiro, ii: ad.ii, ipi: ad.ipi, pis: ad.pis, cofins: ad.cofins, pesoLiquido: ad.pesoLiquido }),
+      );
+      aplicarAdicoes(produtos, tributadas);
       preenchidos += produtos.length;
-      registrarTributadas(textos);
     }
 
     setShowImportar(false);
@@ -454,39 +494,35 @@ export default function Home() {
       if (data.recintoNome) { updateDocumento("nomeRecinto", data.recintoNome); preenchidos++; }
       if (data.urfNome) { updateDocumento("urfNome", data.urfNome); preenchidos++; }
       if (data.ufDesembaraco) { updateDocumento("ufDesembaraco", data.ufDesembaraco); preenchidos++; }
-      const valorAduaneiro = data.valorCIFReais || data.valorCIF;
+      // Valor aduaneiro: soma das adições (base do II); o CIF do texto livre fica como reserva
+      const valorAduaneiro = paraNumero(data.valorAduaneiroTotal) > 0 ? data.valorAduaneiroTotal : data.valorCIFReais || data.valorCIF;
       if (valorAduaneiro) {
         updateDocumento("valorCIF", valorAduaneiro);
         updateICMSCalculo("valorCIF", valorAduaneiro);
         updateField("valorCIFAdicion", valorAduaneiro);
         preenchidos++;
       }
-      // Tributos federais somados (II + IPI + PIS + COFINS + Taxa Siscomex)
-      if (data.totalImpostosReais && parseFloat(data.totalImpostosReais) > 0) {
-        updateICMSCalculo("impostos", data.totalImpostosReais);
+      // Tributos federais (II + IPI + PIS + COFINS); a Taxa Siscomex vai para as despesas
+      if (paraNumero(data.totalTributosFederais) > 0) {
+        updateICMSCalculo("impostos", data.totalTributosFederais);
         preenchidos++;
       }
+      reiniciarDespesas({ taxaSiscomex: data.taxaSiscomex, outrasReceitas: data.outrasReceitas });
 
       // ===== ADIÇÕES (já ordenadas por número no servidor) =====
       if (data.adicoes?.length > 0) {
-        // Taxa Siscomex rateada igualmente entre as adições
-        const taxaPorAdicao = parseFloat(data.taxaSiscomex || "0") / data.adicoes.length;
-        const { produtos, tributadas, textos } = separarAdicoes(
-          data.adicoes,
-          (ad) => ad.valorAduaneiro,
-          (ad, aliquota) => {
-            // (Base de cálculo + II + IPI + PIS/PASEP + COFINS + Taxa Siscomex) ÷ 0,795 × alíquota
-            const baseCalculo = parseFloat(ad.valorAduaneiro || "0");
-            const impostos = ad.impostos
-              ? parseFloat(ad.impostos.ii || "0") + parseFloat(ad.impostos.ipi || "0") +
-                parseFloat(ad.impostos.pis || "0") + parseFloat(ad.impostos.cofins || "0")
-              : 0;
-            return ((baseCalculo + impostos + taxaPorAdicao) / 0.795) * (aliquota / 100);
-          },
+        const { produtos, tributadas } = separarAdicoes(data.adicoes, (ad) =>
+          valoresDaDeclaracao({
+            valorAduaneiro: ad.valorAduaneiro,
+            ii: ad.impostos?.ii,
+            ipi: ad.impostos?.ipi,
+            pis: ad.impostos?.pis,
+            cofins: ad.impostos?.cofins,
+            pesoLiquido: ad.pesoLiquido,
+          }),
         );
-        substituirAdicoes(produtos, tributadas);
+        aplicarAdicoes(produtos, tributadas);
         preenchidos += produtos.length;
-        registrarTributadas(textos);
       }
 
       setShowImportar(false);
@@ -525,6 +561,39 @@ export default function Home() {
 
   const importando = parsearXMLMutation.isPending || parsearDuimpPDFMutation.isPending || extraindoTextoPDF;
 
+  // ===== SEFAZ: inscrição estadual e situação cadastral (certificado A1) =====
+  const [consultaSefaz, setConsultaSefaz] = useState<EstadoConsultaSefaz>({ estado: "inativo" });
+  const consultarSefazMutation = trpc.sefaz.consultarCadastro.useMutation();
+
+  const consultarSefaz = async (cnpj: string, ufInformada: string) => {
+    const uf = (ufInformada || "PE").toUpperCase();
+    if (uf !== "PE") {
+      setConsultaSefaz({ estado: "nao_encontrado", uf, mensagem: "a consulta automática da inscrição estadual está disponível para contribuintes de Pernambuco." });
+      return;
+    }
+    setConsultaSefaz({ estado: "consultando", uf });
+    try {
+      const r = await consultarSefazMutation.mutateAsync({ cnpj, uf });
+      if (!r.encontrado) {
+        setConsultaSefaz({ estado: "nao_encontrado", uf, mensagem: r.mensagem || "CNPJ sem cadastro de contribuinte do ICMS." });
+        return;
+      }
+      setConsultaSefaz({ estado: "encontrado", uf, cadastros: r.cadastros });
+      const principal = r.cadastros.find((c) => c.habilitado) ?? r.cadastros[0];
+      if (principal?.inscricaoEstadual) updateImportador("inscricaoEstadual", principal.inscricaoEstadual);
+      if (principal && !principal.habilitado) {
+        toast.warning(`Inscrição estadual ${principal.inscricaoEstadual} não habilitada na SEFAZ-${uf}.`);
+      }
+    } catch (e: any) {
+      setConsultaSefaz({
+        estado: "erro",
+        uf,
+        mensagem: e?.message || "Falha na consulta.",
+        semCertificado: e?.data?.code === "PRECONDITION_FAILED",
+      });
+    }
+  };
+
   // ===== CONSULTA CNPJ =====
   const buscarCNPJQuery = trpc.cnpj.buscar.useQuery({ cnpj: cnpjBusca.replace(/\D/g, "") }, { enabled: false, retry: false });
 
@@ -551,6 +620,8 @@ export default function Home() {
         updateImportador("telefone", d.telefone);
         setCnpjStatus("ok");
         toast.success(`Empresa encontrada: ${d.razaoSocial}`);
+        // Inscrição estadual e situação cadastral vêm da SEFAZ (a Receita não tem esse dado)
+        void consultarSefaz(d.cnpj, d.uf);
       }
     } catch (e: any) {
       setCnpjStatus("error");
@@ -558,6 +629,7 @@ export default function Home() {
     } finally {
       setCnpjLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cnpjBusca, buscarCNPJQuery, updateImportador]);
 
   const handleSelecionarImportador = (imp: any) => {
@@ -601,8 +673,23 @@ export default function Home() {
   const handleGerarPDF = async () => {
     setGerandoPDF(true);
     try {
-      await gerarGLMEPDF(formData as any);
-      toast.success("Guia gerada em PDF.");
+      const unico = calculo.diferimento.length === 1 ? calculo.diferimento[0] : undefined;
+      const dadosPDF = {
+        ...formData,
+        icmsCalculo: {
+          ...formData.icmsCalculo,
+          // 5.5: valor aduaneiro só das adições que constam na guia
+          valorCIF: calculo.valorAduaneiroGLME > 0 ? calculo.valorAduaneiroGLME.toFixed(2) : formData.icmsCalculo.valorCIF,
+          vt: unico ? unico.valorPartida.toFixed(2) : "",
+          vti: unico ? unico.baseCalculo.toFixed(2) : "",
+          vf: calculo.totalDiferido.toFixed(2),
+          memoria: calculo.memoria,
+          memoriaFrente: calculo.memoriaFrente,
+        },
+      };
+      await gerarGLMEPDF(dadosPDF as any);
+      if (calculo.avisos.length > 0) toast.warning("Guia gerada. Confira os avisos da seção ICMS antes de apresentá-la.");
+      else toast.success("Guia gerada em PDF.");
     } catch (e: any) {
       toast.error(`Erro ao gerar PDF: ${e.message}`);
     } finally {
@@ -618,6 +705,9 @@ export default function Home() {
   };
 
   const tributadas = formData.adicoesTributadas ?? [];
+  const icms = formData.icmsCalculo;
+  // Refeito a cada alteração do formulário (inclusive o valor aduaneiro da seção ICMS)
+  const calculo = useMemo(() => calcularFormulario(formData), [formData]);
 
   const camposEmpresa = (
     dados: typeof formData.importador,
@@ -758,7 +848,7 @@ export default function Home() {
           )}
         >
           <div className="mb-5 flex flex-col gap-2 rounded-xl bg-secondary/60 p-3 sm:flex-row sm:items-end">
-            <Campo rotulo="Consultar CNPJ na Receita Federal" htmlFor="cnpj-busca" className="flex-1">
+            <Campo rotulo="Consultar CNPJ na Receita Federal e na SEFAZ-PE" htmlFor="cnpj-busca" className="flex-1">
               <Input
                 id="cnpj-busca"
                 inputMode="numeric"
@@ -778,6 +868,14 @@ export default function Home() {
             <p className="-mt-3 mb-4 flex items-center gap-1.5 text-xs text-[#00707d]">
               <CheckCircle2 className="size-3.5" /> Dados preenchidos com a consulta do CNPJ.
             </p>
+          )}
+          {consultaSefaz.estado !== "inativo" && (
+            <div className="mb-4">
+              <SituacaoCadastral
+                consulta={consultaSefaz}
+                onRepetir={() => consultarSefaz(formData.importador.cnpj.replace(/\D/g, ""), formData.importador.uf)}
+              />
+            </div>
           )}
           {camposEmpresa(formData.importador, updateImportador, "importador")}
         </Secao>
@@ -916,7 +1014,20 @@ export default function Home() {
                     </Select>
                   </Campo>
                 </div>
-                <AdicaoFiscal ncm={produto.classeTarifaria || produto.ncm} itens={produto.itens} descricao={produto.descricao} naGLME />
+                <div className="mb-4">
+                  <ValoresAdicao
+                    id={`ad-${index}-valores`}
+                    valores={produto.valores}
+                    onChange={(campo, valor) => updateProduto(index, `valores.${campo}`, valor)}
+                  />
+                </div>
+                <AdicaoFiscal
+                  ncm={produto.classeTarifaria || produto.ncm}
+                  itens={produto.itens}
+                  descricao={produto.descricao}
+                  naGLME
+                  calculo={calculo.produtos[index]}
+                />
               </article>
             ))}
 
@@ -931,7 +1042,14 @@ export default function Home() {
                     <h4 className="mb-3 font-semibold text-brand-navy">
                       Adição {ad.adicao} <span className="font-normal text-muted-foreground">· NCM {ad.ncm}</span>
                     </h4>
-                    <AdicaoFiscal ncm={ad.ncm} itens={ad.itens} descricao={ad.descricao} naGLME={false} valorICMS={ad.valorICMS} />
+                    <div className="mb-4">
+                      <ValoresAdicao
+                        id={`trib-${i}-valores`}
+                        valores={ad.valores}
+                        onChange={(campo, valor) => updateTributada(i, `valores.${campo}`, valor)}
+                      />
+                    </div>
+                    <AdicaoFiscal ncm={ad.ncm} itens={ad.itens} descricao={ad.descricao} naGLME={false} calculo={calculo.tributadas[i]} />
                   </article>
                 ))}
               </div>
@@ -940,7 +1058,7 @@ export default function Home() {
         </Secao>
 
         {/* ===== ICMS ===== */}
-        <Secao id="icms" icone={Calculator} titulo="ICMS — fundamento legal e cálculo" descricao="Base: (valor aduaneiro + tributos federais) ÷ 0,795 × 20,5%.">
+        <Secao id="icms" icone={Calculator} titulo="ICMS — fundamento legal e cálculo" descricao="Base: (valor aduaneiro + tributos + despesas aduaneiras) ÷ (1 − alíquota) × alíquota, por alíquota.">
           <div className="space-y-6">
             <div className="grid gap-3 sm:grid-cols-[minmax(0,220px)_1fr] sm:items-end">
               <Campo rotulo="Edital DBF" htmlFor="edital-dbf">
@@ -982,46 +1100,101 @@ export default function Home() {
               />
             </Campo>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Campo rotulo="Valor aduaneiro · R$" htmlFor="icms-cif">
-                <Input
-                  id="icms-cif"
-                  type="number"
-                  inputMode="decimal"
-                  step="0.01"
-                  value={formData.icmsCalculo.valorCIF}
-                  onChange={(e) => updateICMSCalculo("valorCIF", e.target.value)}
-                  placeholder="0,00"
-                />
-              </Campo>
-              <Campo rotulo="Tributos federais + Taxa Siscomex · R$" htmlFor="icms-impostos">
-                <Input
-                  id="icms-impostos"
-                  type="number"
-                  inputMode="decimal"
-                  step="0.01"
-                  value={formData.icmsCalculo.impostos}
-                  onChange={(e) => updateICMSCalculo("impostos", e.target.value)}
-                  placeholder="0,00"
-                />
-              </Campo>
+            <div className="space-y-3">
+              <div>
+                <p className="text-[13px] font-medium text-muted-foreground">Despesas aduaneiras da declaração · R$</p>
+                <p className="text-xs text-muted-foreground">
+                  Rateadas entre as adições pelo valor aduaneiro; o AFRMM, pelo peso líquido (Ajuste SINIEF 32/21).
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <CampoValor id="icms-siscomex" rotulo="Taxa Siscomex" valor={icms.taxaSiscomex} onChange={(v) => updateICMSCalculo("taxaSiscomex", v)} />
+                <CampoValor id="icms-outras" rotulo="Taxas de anuentes e outras" valor={icms.outrasDespesas} onChange={(v) => updateICMSCalculo("outrasDespesas", v)} />
+                <CampoValor id="icms-iof" rotulo="IOF-câmbio" valor={icms.iofCambio} onChange={(v) => updateICMSCalculo("iofCambio", v)} />
+                <CampoValor id="icms-afrmm" rotulo="AFRMM" valor={icms.afrmm} onChange={(v) => updateICMSCalculo("afrmm", v)} />
+              </div>
+              <label htmlFor="icms-incluir-afrmm" className="flex w-fit cursor-pointer items-center gap-2.5 text-sm">
+                <Switch id="icms-incluir-afrmm" checked={Boolean(icms.incluirAFRMM)} onCheckedChange={(v) => updateICMSCalculo("incluirAFRMM", v)} />
+                Incluir o AFRMM na base de cálculo
+              </label>
+              {(icms.outrasReceitas?.length ?? 0) > 0 && (
+                <p className="rounded-xl bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+                  A DI traz outros pagamentos:{" "}
+                  {icms.outrasReceitas!.map((r) => `receita ${r.codigo} (R$ ${formatarMoeda(paraNumero(r.valor))})`).join(", ")}.
+                  Some em “Taxas de anuentes e outras” o que for devido à aduana.
+                </p>
+              )}
             </div>
 
-            <dl className="divide-y overflow-hidden rounded-xl border text-sm">
-              {[
-                { rotulo: "VT · valor aduaneiro + tributos", valor: formData.icmsCalculo.vt },
-                { rotulo: "VTI · VT ÷ 0,795", valor: formData.icmsCalculo.vti },
-              ].map((linha) => (
-                <div key={linha.rotulo} className="flex items-center justify-between gap-4 px-4 py-2.5">
-                  <dt className="min-w-0 text-muted-foreground">{linha.rotulo}</dt>
-                  <dd className="tabular-nums shrink-0 whitespace-nowrap font-medium">R$ {reais(linha.valor)}</dd>
+            {calculo.modo === "totais" ? (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Cálculo pelos totais da declaração. Para calcular por alíquota, informe os valores de cada adição em Adições / itens.
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <CampoValor id="icms-cif" rotulo="Valor aduaneiro" valor={icms.valorCIF} onChange={(v) => updateICMSCalculo("valorCIF", v)} />
+                  <CampoValor id="icms-impostos" rotulo="Tributos federais (II + IPI + PIS + COFINS)" valor={icms.impostos} onChange={(v) => updateICMSCalculo("impostos", v)} />
                 </div>
-              ))}
-              <div className="flex items-center justify-between gap-4 bg-brand-navy px-4 py-3.5 text-white">
-                <dt className="min-w-0 font-medium">ICMS (VF) · VTI × 20,5%</dt>
-                <dd className="tabular-nums shrink-0 whitespace-nowrap text-lg font-semibold">R$ {reais(formData.icmsCalculo.vf)}</dd>
               </div>
-            </dl>
+            ) : (
+              <p className="flex items-center gap-2 rounded-xl bg-brand-sky-soft/60 px-4 py-3 text-sm">
+                <CheckCircle2 className="size-4 shrink-0 text-brand-navy" />
+                Calculado adição por adição, com os valores informados em Adições / itens.
+              </p>
+            )}
+
+            {calculo.avisos.map((aviso) => (
+              <p key={aviso} className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                <span>{aviso}</span>
+              </p>
+            ))}
+
+            {calculo.diferimento.length > 0 && (
+              <div className="space-y-3">
+                {calculo.diferimento.map((g) => (
+                  <dl key={g.aliquota} className="divide-y overflow-hidden rounded-xl border text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2 bg-secondary/60 px-4 py-2.5">
+                      <dt className="font-semibold text-brand-navy">Alíquota {formatarAliquota(g.aliquota)}</dt>
+                      <dd className="text-xs text-muted-foreground">
+                        {g.adicoes.length === 0 ? "Totais da declaração" : `${g.adicoes.length === 1 ? "Adição" : "Adições"} ${g.adicoes.join(", ")}`}
+                      </dd>
+                    </div>
+                    <LinhaCalculo
+                      rotulo="VT · valor aduaneiro + tributos + despesas"
+                      detalhe={`${formatarMoeda(g.valorAduaneiro)} + ${formatarMoeda(g.tributosFederais)} + ${formatarMoeda(g.despesas)}`}
+                      valor={g.valorPartida}
+                    />
+                    <LinhaCalculo rotulo={`VTI · VT ÷ ${formatarDivisor(g.divisor)}`} valor={g.baseCalculo} />
+                    <LinhaCalculo rotulo={`ICMS (VF) · VTI × ${formatarAliquota(g.aliquota)}`} valor={g.icms} destaque={calculo.diferimento.length === 1} />
+                  </dl>
+                ))}
+                {calculo.diferimento.length > 1 && (
+                  <div className="flex items-center justify-between gap-4 rounded-xl bg-brand-navy px-4 py-3.5 text-white">
+                    <span className="font-medium">ICMS diferido total</span>
+                    <span className="whitespace-nowrap text-lg font-semibold tabular-nums">R$ {formatarMoeda(calculo.totalDiferido)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {calculo.totalTributacaoNormal > 0 && (
+              <p className="flex items-center justify-between gap-4 rounded-xl border border-amber-200/70 bg-amber-50/40 px-4 py-3 text-sm">
+                <span>ICMS a recolher — tributação normal, fora da guia</span>
+                <span className="whitespace-nowrap font-semibold tabular-nums">R$ {formatarMoeda(calculo.totalTributacaoNormal)}</span>
+              </p>
+            )}
+
+            {calculo.memoria.length > 0 && (
+              <div>
+                <p className="mb-1.5 text-[13px] font-medium text-muted-foreground">Memória de cálculo impressa na guia (campo 5.4)</p>
+                <div className="space-y-1 rounded-xl border bg-background/60 px-4 py-3 text-xs leading-relaxed">
+                  {calculo.memoria.map((l, i) => (
+                    <p key={i} className={cn(l.destaque && "font-semibold text-brand-navy")}>{l.texto}</p>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </Secao>
 

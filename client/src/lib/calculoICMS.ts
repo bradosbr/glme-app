@@ -31,6 +31,8 @@ export interface ValoresAdicao {
 export interface AdicaoParaCalculo extends ValoresAdicao {
   adicao: string;
   ncm: string;
+  /** Regime definido pelo usuário; sem ele, vale a lista negativa do PEAP. */
+  regime?: Regime;
 }
 
 /** Despesas lançadas uma vez por declaração e rateadas entre as adições. */
@@ -169,7 +171,7 @@ export function calcularICMS(
     return {
       ...a,
       aliquota,
-      regime: naListaNegativa(a.ncm) ? "tributacao_normal" : "diferimento",
+      regime: a.regime ?? (naListaNegativa(a.ncm) ? "tributacao_normal" : "diferimento"),
       tributosFederais: paraReais(tributos),
       despesas: {
         taxaSiscomex: paraReais(siscomex[i]),
@@ -276,7 +278,7 @@ export interface LinhaMemoria {
  */
 export function memoriaDeCalculo(
   diferimento: GrupoAliquota[],
-  tributadas: AdicaoCalculada[] = [],
+  tributadas: Array<Pick<AdicaoCalculada, "adicao" | "ncm" | "aliquota"> & { icms?: number }> = [],
 ): LinhaMemoria[] {
   const linhas: LinhaMemoria[] = [];
   const variasAliquotas = diferimento.length > 1;
@@ -306,9 +308,33 @@ export function memoriaDeCalculo(
 
   for (const a of tributadas) {
     linhas.push({
-      texto: `ADIÇÃO ${a.adicao} - NCM ${a.ncm} - TRIBUTAÇÃO NORMAL - ALÍQUOTA ${formatarAliquota(a.aliquota)} - VALOR DO ICMS - R$ ${formatarMoeda(a.icms)}. RECOLHIMENTO INTEGRAL: A ADIÇÃO NÃO CONSTA NA GLME.`,
+      texto: `ADIÇÃO ${a.adicao} - NCM ${a.ncm} - TRIBUTAÇÃO NORMAL - ALÍQUOTA ${formatarAliquota(a.aliquota)}${a.icms !== undefined ? ` - VALOR DO ICMS - R$ ${formatarMoeda(a.icms)}` : ""}. RECOLHIMENTO INTEGRAL: A ADIÇÃO NÃO CONSTA NA GLME.`,
     });
   }
 
+  return linhas;
+}
+
+/**
+ * Versão compacta para a frente da guia, onde o campo 5.4 tem pouca altura:
+ * com uma alíquota é igual à memória completa; com várias, uma linha por
+ * alíquota e o total — o detalhamento vai no verso.
+ */
+export function memoriaResumida(
+  diferimento: GrupoAliquota[],
+  tributadas: Array<Pick<AdicaoCalculada, "adicao" | "ncm" | "aliquota"> & { icms?: number }> = [],
+): LinhaMemoria[] {
+  if (diferimento.length <= 1) return memoriaDeCalculo(diferimento, tributadas);
+  const linhas: LinhaMemoria[] = diferimento.map((g) => ({
+    texto: `ALÍQUOTA ${formatarAliquota(g.aliquota)}${g.adicoes.length > 0 ? ` (${listarAdicoes(g.adicoes)})` : ""}: (VT) R$ ${formatarMoeda(g.valorPartida)} ÷ ${formatarDivisor(g.divisor)} = (VTI) R$ ${formatarMoeda(g.baseCalculo)} × ${formatarAliquota(g.aliquota)} = (VF) R$ ${formatarMoeda(g.icms)}`,
+    destaque: true,
+  }));
+  const total = diferimento.reduce((t, g) => t + paraCentavos(g.icms), 0);
+  linhas.push({ texto: `TOTAL DO ICMS DIFERIDO: R$ ${formatarMoeda(paraReais(total))} — MEMÓRIA DE CÁLCULO DETALHADA NO VERSO.`, destaque: true });
+  for (const a of tributadas) {
+    linhas.push({
+      texto: `ADIÇÃO ${a.adicao} (NCM ${a.ncm}): TRIBUTAÇÃO NORMAL A ${formatarAliquota(a.aliquota)}${a.icms !== undefined ? ` - ICMS R$ ${formatarMoeda(a.icms)}` : ""} - NÃO CONSTA NA GLME.`,
+    });
+  }
   return linhas;
 }

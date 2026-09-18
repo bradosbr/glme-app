@@ -1,6 +1,7 @@
 import { AlertTriangle, Package } from "lucide-react";
 import type { ItemAdicao } from "@/hooks/useGLMEForm";
 import { consultarAliquotaNCM, formatarMoeda, type NivelNCM } from "@/lib/aliquotasICMS";
+import { formatarAliquota, formatarDivisor, type AdicaoCalculada } from "@/lib/calculoICMS";
 import { ncmNaListaNegativa } from "@/lib/listaNegativa";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +21,8 @@ interface AdicaoFiscalProps {
   descricao?: string;
   /** true quando a adição foi lançada na GLME (diferimento). */
   naGLME: boolean;
-  valorICMS?: number;
+  /** Cálculo da adição, quando há os valores de cada adição. */
+  calculo?: AdicaoCalculada;
 }
 
 /**
@@ -28,7 +30,7 @@ interface AdicaoFiscalProps {
  * regime (diferimento x tributação normal), alíquota de recolhimento
  * (Anexo I em qualquer nível ou padrão) e os itens da DUIMP que a compõem.
  */
-export function AdicaoFiscal({ ncm, itens, descricao, naGLME, valorICMS }: AdicaoFiscalProps) {
+export function AdicaoFiscal({ ncm, itens, descricao, naGLME, calculo }: AdicaoFiscalProps) {
   const ncmLimpo = (ncm || "").replace(/\D/g, "");
   const temNCM = ncmLimpo.length >= 4;
   const consulta = consultarAliquotaNCM(ncmLimpo);
@@ -57,8 +59,16 @@ export function AdicaoFiscal({ ncm, itens, descricao, naGLME, valorICMS }: Adica
                 ? <>Anexo I, item {consulta.regra.item} {consulta.nivel && NIVEL[consulta.nivel]} — {consulta.regra.descricao}</>
                 : "Alíquota padrão: NCM e capítulo sem regra específica no Anexo I"}
             </p>
-            {valorICMS !== undefined && (
-              <p className="font-medium text-foreground">ICMS a recolher: R$ {formatarMoeda(valorICMS)}</p>
+            {calculo && (
+              <div>
+                <p className="font-medium text-foreground">
+                  {naGLME ? "ICMS diferido" : "ICMS a recolher"}: R$ {formatarMoeda(calculo.icms)}
+                </p>
+                <p className="tabular-nums text-xs text-muted-foreground">
+                  VT R$ {formatarMoeda(calculo.valorPartida)} ÷ {formatarDivisor(calculo.divisor)} = VTI R$ {formatarMoeda(calculo.baseCalculo)} × {formatarAliquota(calculo.aliquota)}
+                  {calculo.despesas.total > 0 && ` · despesas rateadas R$ ${formatarMoeda(calculo.despesas.total)}`}
+                </p>
+              </div>
             )}
           </div>
         </div>

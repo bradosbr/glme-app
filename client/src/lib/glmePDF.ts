@@ -51,6 +51,10 @@ export interface GLMEFormData {
     vti: string;
     vf: string;
     textoAdicional?: string;
+    /** Memória de cálculo por alíquota (VT, VTI e VF), gerada por calculoICMS. */
+    memoria?: Array<{ texto: string; destaque?: boolean }>;
+    /** Versão compacta para a frente (uma linha por alíquota). */
+    memoriaFrente?: Array<{ texto: string; destaque?: boolean }>;
   };
   assinatura?: {
     nome: string;
@@ -62,6 +66,65 @@ export interface GLMEFormData {
     email?: string;
     assinaturaImagem?: string;
   };
+}
+
+type Bloco54 = { text: string; bold?: boolean; size?: number };
+
+const FUNDAMENTO_PEAP = (edital: string) =>
+  `ICMS diferido nos termos da Lei nº 13.942/2009, art. 2º-A, I; § 1º; Decreto 44.650/2017, Anexo 8, art. 49, Anexo 27, art. 1º, II; Credenciamento de estímulo à atividade portuária – Edital DBF nº. ${edital}; Mercadoria não prevista na Lista de produtos impedidos para utilização do Programa de Estímulo à Atividade Portuária - PEAP - Anexo 27 do Decreto nº 44.650/2017.`;
+
+/** Texto do campo 5.4: fundamento legal, texto complementar e memória de cálculo por alíquota. */
+function blocosCampo54(fd: GLMEFormData, lado: "frente" | "verso"): Bloco54[] {
+  const edital = fd.icmsCalculo?.editalDBF || "XXX/XXXX";
+  const textoAd = fd.icmsCalculo?.textoAdicional || "";
+  const memoria = (lado === "frente" && fd.icmsCalculo?.memoriaFrente) || fd.icmsCalculo?.memoria;
+  const calculo: Bloco54[] = memoria && memoria.length > 0
+    ? memoria.map((l) => ({ text: l.texto, bold: l.destaque, size: l.destaque ? 7.5 : 7.2 }))
+    : [
+        { text: `CÁLCULO: (VALOR ADUANEIRO) R${fmt(fd.icmsCalculo?.valorCIF || "0")} + TRIBUTOS R${fmt(fd.icmsCalculo?.impostos || "0")} = (VT) R${fmt(fd.icmsCalculo?.vt || "0")}`, bold: true, size: 7.5 },
+        { text: `BASE DE CÁLCULO: (VT) R${fmt(fd.icmsCalculo?.vt || "0")} ÷ 0,795 = (VTI) R${fmt(fd.icmsCalculo?.vti || "0")}`, bold: true, size: 7.5 },
+        { text: `ICMS: (VTI) R${fmt(fd.icmsCalculo?.vti || "0")} × 20,5% = (VF) R${fmt(fd.icmsCalculo?.vf || "0")}`, bold: true, size: 7.5 },
+      ];
+  return [
+    { text: FUNDAMENTO_PEAP(edital), size: 7.2 },
+    ...(textoAd ? [{ text: textoAd, size: 7.2 }] : []),
+    { text: "", size: 3 }, // espaço
+    ...calculo,
+  ];
+}
+
+function alturaBlocos(doc: jsPDF, blocos: Bloco54[], cw: number, scale: number): number {
+  let h = 2.5; // padding top
+  for (const blk of blocos) {
+    const sz = (blk.size ?? 7.2) * scale;
+    if (!blk.text) { h += sz * 0.3; continue; }
+    doc.setFont("helvetica", blk.bold ? "bold" : "normal");
+    doc.setFontSize(sz);
+    h += doc.splitTextToSize(blk.text, cw - 2).length * sz * 0.52;
+  }
+  return h + 0.5; // padding bottom
+}
+
+/** Desenha os blocos centralizados na célula, reduzindo a fonte até todo o texto caber. */
+function desenharBlocos(doc: jsPDF, blocos: Bloco54[], cx: number, cy: number, cw: number, ch: number) {
+  let scale = 1.0;
+  const MIN_SCALE = 0.4;
+  while (scale > MIN_SCALE && alturaBlocos(doc, blocos, cw, scale) > ch) {
+    scale = Math.round((scale - 0.05) * 100) / 100;
+  }
+  let ty = cy + 2.5;
+  for (const blk of blocos) {
+    const sz = (blk.size ?? 7.2) * scale;
+    doc.setFont("helvetica", blk.bold ? "bold" : "normal");
+    doc.setFontSize(sz);
+    doc.setTextColor(0, 0, 0);
+    if (!blk.text) { ty += sz * 0.3; continue; }
+    for (const ln of doc.splitTextToSize(blk.text, cw - 2)) {
+      if (ty + sz * 0.4 > cy + ch - 0.5) break; // guarda de segurança
+      doc.text(ln, cx + cw / 2, ty + sz * 0.35, { align: "center" });
+      ty += sz * 0.52;
+    }
+  }
 }
 
 const BK = [0, 0, 0] as [number, number, number];
@@ -272,67 +335,9 @@ function page1(doc: jsPDF, fd: GLMEFormData) {
   headerBox(doc, ML + c1 + c2 + c3 + c4, y, c5, hh, "5.5 VALOR\nADUANEIRO DA\nADIÇÃO EM R$");
   y += hh;
 
-  // Dados do campo 5.4 - fundamento legal e cálculos
-  const edital = fd.icmsCalculo?.editalDBF || "XXX/XXXX";
-  const textoAd = (fd.icmsCalculo as any)?.textoAdicional || "";
-  const cifVal = fmt(fd.icmsCalculo?.valorCIF || "0");
-  const impVal = fmt(fd.icmsCalculo?.impostos || "0");
-  const vtVal  = fmt(fd.icmsCalculo?.vt  || "0");
-  const vtiVal = fmt(fd.icmsCalculo?.vti || "0");
-  const vfVal  = fmt(fd.icmsCalculo?.vf  || "0");
-
-  // Blocos de texto do campo 5.4 — fonte +3pt (7.2 para texto legal, 7.5 para cálculos)
-  const fund54Blocks: Array<{ text: string; bold?: boolean; size?: number }> = [
-    {
-      text: `ICMS diferido nos termos da Lei nº 13.942/2009, art. 2º-A, I; § 1º; Decreto 44.650/2017, Anexo 8, art. 49, Anexo 27, art. 1º, II; Credenciamento de estímulo à atividade portuária – Edital DBF nº. ${edital}; Mercadoria não prevista na Lista de produtos impedidos para utilização do Programa de Estímulo à Atividade Portuária - PEAP - Anexo 27 do Decreto nº 44.650/2017.`,
-      size: 7.2, // +3pt em relação ao original 4.2
-    },
-    ...(textoAd ? [{ text: textoAd, size: 7.2 }] : []),
-    { text: "", size: 3 }, // espaço
-    { text: `CÁLCULO: (VALOR CIF) R$${cifVal} + IMPOSTOS R$${impVal} = (VT) R$${vtVal}`, bold: true, size: 7.5 },
-    { text: `BASE DE CÁLCULO PARA ICMS: (VT) R$${vtVal} / 0,795 = (VTI) R$${vtiVal}`, bold: true, size: 7.5 },
-    { text: `CÁLCULO ICMS: (VTI) R$${vtiVal} × 20,5% = (VF) R$${vfVal}`, bold: true, size: 7.5 },
-  ];
-
-  // Calcula a altura total necessária para renderizar todos os blocos com um fator de escala
-  function calcHeight54(cw: number, scale: number): number {
-    let h = 2.5; // padding top
-    for (const blk of fund54Blocks) {
-      const sz = (blk.size ?? 7.2) * scale;
-      if (!blk.text) { h += sz * 0.3; continue; }
-      doc.setFont("helvetica", blk.bold ? "bold" : "normal");
-      doc.setFontSize(sz);
-      const lines = doc.splitTextToSize(blk.text, cw - 2);
-      h += lines.length * sz * 0.52;
-    }
-    h += 0.5; // padding bottom
-    return h;
-  }
-
-  // Renderiza o campo 5.4 com auto-shrink: reduz a fonte até todo o texto caber na célula
-  function render54(cx: number, cy: number, cw: number, ch: number) {
-    // Determinar fator de escala: começa em 1.0 e reduz em passos de 0.05 até caber
-    let scale = 1.0;
-    const MIN_SCALE = 0.4;
-    while (scale > MIN_SCALE && calcHeight54(cw, scale) > ch) {
-      scale = Math.round((scale - 0.05) * 100) / 100;
-    }
-
-    let ty = cy + 2.5;
-    for (const blk of fund54Blocks) {
-      const sz = (blk.size ?? 7.2) * scale;
-      doc.setFont("helvetica", blk.bold ? "bold" : "normal");
-      doc.setFontSize(sz);
-      doc.setTextColor(...BK);
-      if (!blk.text) { ty += sz * 0.3; continue; }
-      const wrapped = doc.splitTextToSize(blk.text, cw - 2);
-      for (const ln of wrapped) {
-        if (ty + sz * 0.4 > cy + ch - 0.5) break; // guarda de segurança
-        doc.text(ln, cx + cw / 2, ty + sz * 0.35, { align: "center" });
-        ty += sz * 0.52;
-      }
-    }
-  }
+  // Campo 5.4: fundamento legal + memória de cálculo por alíquota (fonte reduz até caber)
+  const render54 = (cx: number, cy: number, cw: number, ch: number) =>
+    desenharBlocos(doc, blocosCampo54(fd, "frente"), cx, cy, cw, ch);
 
   // Linhas de produtos — ALTURA FIXA (layout não muda)
   // Frente: 3 linhas com altura fixa de 10mm cada
@@ -501,38 +506,8 @@ function page2(doc: jsPDF, fd: GLMEFormData, startIdx = 3) {
 
   // Célula 5.4 MESCLADA no verso: uma única célula cobrindo todas as linhas do verso
   box(doc, ML + c1 + c2 + c3, y, c4, totalBackH);
-  // No verso, o campo 5.4 exibe o mesmo texto do fundamento legal (compacto)
-  {
-    const edital = fd.icmsCalculo?.editalDBF || "XXX/XXXX";
-    const textoAd = (fd.icmsCalculo as any)?.textoAdicional || "";
-    const cifVal = fmt(fd.icmsCalculo?.valorCIF || "0");
-    const impVal = fmt(fd.icmsCalculo?.impostos || "0");
-    const vtVal  = fmt(fd.icmsCalculo?.vt  || "0");
-    const vtiVal = fmt(fd.icmsCalculo?.vti || "0");
-    const vfVal  = fmt(fd.icmsCalculo?.vf  || "0");
-    const blocks: Array<{ text: string; bold?: boolean; size?: number }> = [
-      { text: `ICMS diferido nos termos da Lei nº 13.942/2009, art. 2º-A, I; § 1º; Decreto 44.650/2017, Anexo 8, art. 49, Anexo 27, art. 1º, II; Credenciamento de estímulo à atividade portuária – Edital DBF nº. ${edital}; Mercadoria não prevista na Lista de produtos impedidos para utilização do Programa de Estímulo à Atividade Portuária - PEAP - Anexo 27 do Decreto nº 44.650/2017.`, size: 7.2 },
-      ...(textoAd ? [{ text: textoAd, size: 7.2 }] : []),
-      { text: "", size: 3 },
-      { text: `CÁLCULO: (VALOR CIF) R$${cifVal} + IMPOSTOS R$${impVal} = (VT) R$${vtVal}`, bold: true, size: 7.5 },
-      { text: `BASE DE CÁLCULO PARA ICMS: (VT) R$${vtVal} / 0,795 = (VTI) R$${vtiVal}`, bold: true, size: 7.5 },
-      { text: `CÁLCULO ICMS: (VTI) R$${vtiVal} × 20,5% = (VF) R$${vfVal}`, bold: true, size: 7.5 },
-    ];
-    let ty = y + 2.5;
-    for (const blk of blocks) {
-      const sz = blk.size ?? 7.2;
-      doc.setFont("helvetica", blk.bold ? "bold" : "normal");
-      doc.setFontSize(sz);
-      doc.setTextColor(...BK);
-      if (!blk.text) { ty += sz * 0.3; continue; }
-      const wrapped = doc.splitTextToSize(blk.text, c4 - 2);
-      for (const ln of wrapped) {
-        if (ty + sz * 0.4 > y + totalBackH - 0.5) break;
-        doc.text(ln, ML + c1 + c2 + c3 + c4 / 2, ty + sz * 0.35, { align: "center" });
-        ty += sz * 0.52;
-      }
-    }
-  }
+  // No verso, o campo 5.4 repete o fundamento legal e a memória de cálculo
+  desenharBlocos(doc, blocosCampo54(fd, "verso"), ML + c1 + c2 + c3, y, c4, totalBackH);
 
   // Célula 5.5 MESCLADA no verso: uma única célula cobrindo todas as linhas
   box(doc, ML + c1 + c2 + c3 + c4, y, c5, totalBackH);

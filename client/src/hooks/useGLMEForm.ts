@@ -7,6 +7,21 @@ export interface ItemAdicao {
   descricao: string;
 }
 
+/**
+ * Valores da adição usados no cálculo do ICMS (texto, como digitado; ponto decimal).
+ * Vêm da DI/DUIMP e podem ser corrigidos pelo usuário na seção de adições.
+ */
+export interface ValoresAdicaoForm {
+  valorAduaneiro: string;
+  ii: string;
+  ipi: string;
+  pis: string;
+  cofins: string;
+  pesoLiquido?: string;
+}
+
+export const VALORES_ADICAO_VAZIOS: ValoresAdicaoForm = { valorAduaneiro: "", ii: "", ipi: "", pis: "", cofins: "" };
+
 export interface ProdutoAdicao {
   adicao: string;
   classeTarifaria: string;
@@ -17,6 +32,7 @@ export interface ProdutoAdicao {
   descricao?: string;
   valorAduaneiro?: string;
   itens?: ItemAdicao[];
+  valores?: ValoresAdicaoForm;
 }
 
 /**
@@ -28,7 +44,8 @@ export interface AdicaoTributada {
   ncm: string;
   descricao?: string;
   itens?: ItemAdicao[];
-  /** Valor do ICMS calculado, quando a declaração traz a base da adição (DI). */
+  valores?: ValoresAdicaoForm;
+  /** @deprecated Calculado agora por calculoICMS a partir de `valores`. */
   valorICMS?: number;
 }
 
@@ -90,11 +107,22 @@ export interface FormData {
   // Seção 5.4 - Cálculos de ICMS
   icmsCalculo: {
     editalDBF: string;
+    /** Valor aduaneiro total — usado no cálculo pelos totais (sem valores por adição). */
     valorCIF: string;
+    /** Tributos federais: II + IPI + PIS + COFINS (a Taxa Siscomex fica em taxaSiscomex). */
     impostos: string;
-    vt: string; // VT = Valor CIF + Impostos
-    vti: string; // VTI = VT / 0,795
-    vf: string; // VF = VTI * 20,5%
+    // Despesas aduaneiras da declaração, rateadas entre as adições
+    taxaSiscomex?: string;
+    outrasDespesas?: string;
+    iofCambio?: string;
+    afrmm?: string;
+    incluirAFRMM?: boolean;
+    /** Pagamentos da DI com receita não reconhecida, para o usuário avaliar. */
+    outrasReceitas?: { codigo: string; valor: string }[];
+    // Resultado impresso na guia (preenchido ao gerar o PDF)
+    vt: string;
+    vti: string;
+    vf: string;
     textoAdicional?: string;
   };
 }
@@ -150,6 +178,11 @@ const initialFormData: FormData = {
     editalDBF: "",
     valorCIF: "",
     impostos: "",
+    taxaSiscomex: "",
+    outrasDespesas: "",
+    iofCambio: "",
+    afrmm: "",
+    incluirAFRMM: false,
     vt: "",
     vti: "",
     vf: "",
@@ -187,32 +220,11 @@ export function useGLMEForm() {
         if (path === "numeroAdicao") {
           newData.produtos[0].adicao = value;
         }
+        // O valor aduaneiro da declaração alimenta o cálculo pelos totais.
+        // VT, VTI e VF não são gravados aqui: o cálculo é derivado do formulário
+        // (lib/calculoFormulario) e refeito a cada alteração de qualquer campo.
         if (path === "valorCIFAdicion") {
           newData.icmsCalculo.valorCIF = value;
-          // Recalcular VT
-          const impostos = parseFloat(newData.icmsCalculo.impostos) || 0;
-          const cif = parseFloat(value) || 0;
-          const vt = cif + impostos;
-          newData.icmsCalculo.vt = vt.toFixed(2);
-          // Recalcular VTI
-          const vti = vt / 0.795;
-          newData.icmsCalculo.vti = vti.toFixed(2);
-          // Recalcular VF
-          const vf = vti * 0.205;
-          newData.icmsCalculo.vf = vf.toFixed(2);
-        }
-        if (path === "icmsCalculo.impostos") {
-          // Recalcular VT
-          const cif = parseFloat(newData.icmsCalculo.valorCIF) || 0;
-          const impostos = parseFloat(value) || 0;
-          const vt = cif + impostos;
-          newData.icmsCalculo.vt = vt.toFixed(2);
-          // Recalcular VTI
-          const vti = vt / 0.795;
-          newData.icmsCalculo.vti = vti.toFixed(2);
-          // Recalcular VF
-          const vf = vti * 0.205;
-          newData.icmsCalculo.vf = vf.toFixed(2);
         }
 
         return newData;
@@ -236,6 +248,13 @@ export function useGLMEForm() {
   const updateProduto = useCallback(
     (index: number, field: string, value: any) => {
       updateField(`produtos.${index}.${field}`, value);
+    },
+    [updateField]
+  );
+
+  const updateTributada = useCallback(
+    (index: number, field: string, value: any) => {
+      updateField(`adicoesTributadas.${index}.${field}`, value);
     },
     [updateField]
   );
@@ -309,6 +328,7 @@ export function useGLMEForm() {
     updateAdquirente,
     updateDocumento,
     updateProduto,
+    updateTributada,
     updateICMSCalculo,
     addProduto,
     removeProduto,

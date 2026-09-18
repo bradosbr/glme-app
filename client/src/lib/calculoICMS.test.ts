@@ -4,6 +4,7 @@ import {
   calcularPorTotais,
   divisorDaAliquota,
   memoriaDeCalculo,
+  memoriaResumida,
   ratear,
   type AdicaoParaCalculo,
   type DespesasDeclaracao,
@@ -129,5 +130,22 @@ describe("memória de cálculo da GLME", () => {
     expect(linhas[3].startsWith("ALÍQUOTA 29% — ADIÇÃO 2: ")).toBe(true);
     expect(linhas[6]).toBe("TOTAL DO ICMS DIFERIDO: R$ 666,31");
     expect(linhas[7]).toContain("ADIÇÃO 3 - NCM NEG - TRIBUTAÇÃO NORMAL");
+  });
+});
+
+describe("memória resumida (frente da guia)", () => {
+  it("com uma alíquota é igual à completa", () => {
+    const g = calcularPorTotais({ valorAduaneiro: 1000, tributosFederais: 0 }, semDespesas, 20.5);
+    expect(memoriaResumida([g])).toEqual(memoriaDeCalculo([g]));
+  });
+
+  it("com várias alíquotas usa uma linha por alíquota e remete ao verso", () => {
+    const r = calcularICMS([adicao("1", "A", 1000), adicao("2", "B", 1000)], semDespesas, opcoes({ B: 29 }));
+    const linhas = memoriaResumida(r.diferimento).map((l) => l.texto);
+    expect(linhas).toEqual([
+      "ALÍQUOTA 20,5% (ADIÇÃO 1): (VT) R$ 1.000,00 ÷ 0,795 = (VTI) R$ 1.257,86 × 20,5% = (VF) R$ 257,86",
+      "ALÍQUOTA 29% (ADIÇÃO 2): (VT) R$ 1.000,00 ÷ 0,71 = (VTI) R$ 1.408,45 × 29% = (VF) R$ 408,45",
+      "TOTAL DO ICMS DIFERIDO: R$ 666,31 — MEMÓRIA DE CÁLCULO DETALHADA NO VERSO.",
+    ]);
   });
 });

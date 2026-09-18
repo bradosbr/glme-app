@@ -20,10 +20,13 @@ Produção: https://glme-app.vercel.app — domínio próprio `glme.brados.app.b
 api/trpc/
   [trpc].js                 # Função serverless: toda a API tRPC (/api/trpc/*)
   duimp.consultarAPI.js     # Mesma API, função separada com maxDuration 60s (Portal Único)
+  sefaz.consultarCadastro.js # Mesma API, função separada com maxDuration 30s (SEFAZ-PE)
 client/src/
   pages/Home.tsx            # Página única com o formulário GLME
   components/glme/          # Seção, blocos de ação, diálogo DI/DUIMP, situação fiscal da adição
   lib/aliquotasICMS.ts      # Anexo I (PE) e consulta hierárquica de alíquota por NCM
+  lib/calculoICMS.ts        # Motor do ICMS: divisor por alíquota, rateios, grupos e memória de cálculo
+  lib/calculoFormulario.ts  # Liga o formulário ao motor (modo por adição ou pelos totais)
   lib/extrairTextoPDF.ts    # Extração de texto do PDF da DUIMP no navegador (pdfjs-dist)
   components/               # Componentes UI (shadcn + customizados)
 server/
@@ -32,6 +35,8 @@ server/
   routers.ts                # Endpoints tRPC (CNPJ, importadores, recintos, DI, DUIMP, usuários)
   db.ts                     # Acesso ao banco de dados
   duimpParser.ts            # Parser do texto do extrato DUIMP
+  sefazCadastro.ts          # Webservice CadConsultaCadastro4 (IE e situação cadastral) com certificado A1
+  certs/icpBrasil.ts        # Raiz ICP-Brasil v10 (a SEFAZ usa cadeia ICP-Brasil, fora do repositório do Node)
   scripts/seedAdmin.ts      # pnpm db:seed — cria o admin inicial
   scripts/migrarMysqlParaPostgres.ts  # pnpm db:migrar-dados — migração única MySQL -> Postgres
 shared/                     # Tipos e constantes compartilhados
@@ -64,6 +69,8 @@ vercel.json                 # Build, estáticos, região, maxDuration e fallback
 | `PORT` | Não | Porta do servidor local (padrão 3000; ignorada no Vercel) |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Só no seed | `db:seed` exige `ADMIN_PASSWORD` (mín. 6 caracteres, diferente de `admin123`) |
 | `MYSQL_URL` | Só na migração | Origem MySQL para `db:migrar-dados` (uso único) |
+| `CERTIFICADO_A1_BASE64` | Não | Arquivo .pfx do e-CNPJ A1 em base64 — consulta de IE na SEFAZ-PE |
+| `CERTIFICADO_A1_SENHA` | Com o certificado | Senha do .pfx |
 
 Na connection string, substitua `[YOUR-PASSWORD]` **inclusive os colchetes** pela senha.
 Senha entre colchetes gera `password authentication failed` no pooler.
@@ -136,8 +143,18 @@ A migração vai para a produção **antes** do código novo, então a versão a
   exigem login (`protectedProcedure`); usuários exigem admin.
 - **"Usuário ou senha inválidos"** também aparece quando o app está sem banco (`DATABASE_URL` vazia ou
   malformada). Se aparecer com credenciais corretas, confira a variável antes da senha.
-- **Função dedicada**: `api/trpc/duimp.consultarAPI.js` só existe para ter `maxDuration` de 60s;
-  `server/_core/app.ts` reconstrói o caminho quando o Vercel entrega a rota dinâmica reescrita.
+- **Funções dedicadas**: `api/trpc/duimp.consultarAPI.js` (60s) e `api/trpc/sefaz.consultarCadastro.js` (30s)
+  só existem para ter `maxDuration` maior; `server/_core/app.ts` reconstrói o caminho quando o Vercel
+  entrega a rota dinâmica reescrita.
+- **Cálculo do ICMS**: `(valor aduaneiro + tributos + despesas aduaneiras) ÷ (1 − alíquota) × alíquota`, com o
+  divisor da alíquota **da mercadoria** (informativo SEFAZ-PE "Comércio Exterior", item 2.5). Adições com
+  alíquotas diferentes formam grupos separados. Taxa Siscomex, taxas de anuentes e IOF-câmbio são rateados pelo
+  valor aduaneiro; o AFRMM (opcional) pelo peso líquido — Ajuste SINIEF 32/21. O rateio inclui as adições de
+  tributação normal. Sem os valores de cada adição (ex.: extrato da DUIMP em PDF), o cálculo cai para os totais
+  da declaração, com aviso.
+- **PDF da guia**: o campo 5.4 da frente traz uma linha por alíquota; o verso, a memória completa (VT, VTI, VF).
+- **SEFAZ-PE**: a consulta usa a raiz ICP-Brasil v10 embarcada (conferida contra o repositório do ITI) — nunca
+  desligar a verificação TLS. Rotas `sefaz.*` exigem login porque usam o certificado da empresa.
 
 ## Funcionalidades principais
 
@@ -147,11 +164,11 @@ A migração vai para a produção **antes** do código novo, então a versão a
 - Importação XML de DI: extrai importador, adições (NCM, impostos), dados da declaração, calcula ICMS
 - Importação DUIMP: via PDF (extraído no navegador) ou API Portal Único
 - Filtragem pela lista negativa do Edital 060/2025 (NCMs com tributação normal vs diferimento)
-- Cálculo automático de ICMS: `(BaseCalculo + II + IPI + PIS + COFINS + TaxaSISCOMEX) ÷ 0,795 × alíquota`
+- Cálculo automático de ICMS por alíquota, com rateio das despesas aduaneiras e memória de cálculo na guia
 - Geração de PDF com layout oficial da GLME (jsPDF, no navegador)
-- Cadastro de importadores com busca por CNPJ (BrasilAPI / ReceitaWS)
+- Cadastro de importadores com busca por CNPJ (BrasilAPI / ReceitaWS) e inscrição estadual pela SEFAZ-PE
 - Login local (usuário/senha, scrypt) e administração de usuários
-- 66 testes automatizados (vitest)
+- 98 testes automatizados (vitest)
 
 ## Comandos
 
