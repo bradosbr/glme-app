@@ -170,22 +170,24 @@ describe("critério de rateio e alíquota informada", () => {
     expect(r.adicoes[0].divisor).toBe(0.775);
   });
 
-  it("reproduz a DMI da SEFAZ-PE: adição da lista negativa a 22,5%, Siscomex por peso e sem AFRMM", () => {
+  it("adição da lista negativa (3923.30.90) a 20,5%, com Siscomex por peso e sem AFRMM", () => {
     // Valores da adição de NCM 3923.30.90 da DMI; a outra adição agrega o restante do peso.
+    // A DMI aplicou 22,5% por engano: a NCM não consta no Anexo I, então vale a padrão de 20,5%.
     const r = calcularICMS(
       [
         { adicao: "6", ncm: "39233090", valorAduaneiro: 8377.74, ii: 1507.99, ipi: 963.86, pis: 175.93, cofins: 808.45, pesoLiquido: 885.6 },
         adicao("1", "A", 150000, 0, 16008.15),
       ],
       { ...semDespesas, taxaSiscomex: 493.56, afrmm: 2405.82 },
-      opcoes({ "39233090": 22.5 }, ["39233090"]),
+      opcoes({}, ["39233090"]),
     );
     const neg = r.adicoes[0];
     expect(neg.regime).toBe("tributacao_normal");
     expect(neg.despesas.total).toBe(25.87);
     expect(neg.valorPartida).toBe(11859.84);
-    expect(neg.baseCalculo).toBe(15303.02);
-    expect(neg.icms).toBe(3443.18);
-    expect(r.totalTributacaoNormal).toBe(3443.18);
+    expect(neg.aliquota).toBe(20.5);
+    expect(neg.baseCalculo).toBe(14918.04);
+    expect(neg.icms).toBe(3058.20);
+    expect(r.totalTributacaoNormal).toBe(3058.20);
   });
 });

@@ -12,11 +12,6 @@ export interface AliquotaNCM {
   descricao: string;  // descrição do produto
   aliquota: number;   // alíquota em % (ex: 29)
   item: string;       // item do anexo (ex: "1.1")
-  /**
-   * De onde vem a regra: Anexo 1 da Lei 15.730/2016 (padrão) ou alíquota aplicada pelo e-Fisco
-   * da SEFAZ-PE em DMI real, quando não há previsão expressa no Anexo 1 nem na Lei 12.523/2003.
-   */
-  fonte?: "anexo1" | "efisco";
 }
 
 /**
@@ -66,11 +61,6 @@ export const ALIQUOTAS_ICMS_PE: AliquotaNCM[] = [
   { item: "4.7", ncm: "3924.10.00", descricao: "Copo descartável plástico", aliquota: 22.5 },
   { item: "4.8", ncm: "3917.32.29", descricao: "Canudo descartável plástico", aliquota: 22.5 },
   { item: "4.9", ncm: "3602.00.00", descricao: "Explosivos preparados", aliquota: 22.5 },
-
-  // Alíquota aplicada pelo e-Fisco (DMI da DUIMP 26BR00015748228, set/2026: NCM 3923.30.90 a 22,5%,
-  // "Tributação normal - genérica"). O Anexo 1 e a Lei do FECEP só listam saco plástico (3923.2),
-  // copo (3924.10.00) e canudo (3917.32.29); mantida para a guia bater com a DMI/DAE.
-  { item: "e-Fisco", ncm: "3923.30", descricao: "Garrafões, garrafas, frascos e artigos semelhantes, de plástico", aliquota: 22.5, fonte: "efisco" },
 
   // Grupo 5 - Alíquota 18%
   { item: "5", ncm: "2203.00.00", descricao: "Cerveja acondicionada em embalagem retornável com no mínimo 20% de fécula de mandioca", aliquota: 18 },

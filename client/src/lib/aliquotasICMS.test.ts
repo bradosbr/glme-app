@@ -76,15 +76,15 @@ describe("verificarAliquotaNCM (compatibilidade)", () => {
   });
 });
 
-describe("consultarAliquotaNCM — regras observadas no e-Fisco", () => {
-  it("3923.30.90 (frascos de plástico) vai a 22,5%, como na DMI da SEFAZ-PE", () => {
+describe("consultarAliquotaNCM — plásticos da posição 3923", () => {
+  it("3923.30.90 (frascos de plástico) fica na padrão: não consta no Anexo I da Lei 18.305/2023", () => {
     const c = consultarAliquotaNCM("39233090");
-    expect(c.aliquota).toBe(22.5);
-    expect(c.regra?.fonte).toBe("efisco");
+    expect(c.aliquota).toBe(ALIQUOTA_PADRAO);
+    expect(c.regra).toBeNull();
   });
 
-  it("não afeta o saco plástico (3923.2) nem outras subposições da 3923", () => {
-    expect(consultarAliquotaNCM("39232190").regra?.item).toBe("4.6");
+  it("só o saco plástico (3923.2) vai a 22,5%", () => {
+    expect(consultarAliquotaNCM("39232190").aliquota).toBe(22.5);
     expect(consultarAliquotaNCM("39239000").aliquota).toBe(ALIQUOTA_PADRAO);
   });
 });

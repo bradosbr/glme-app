@@ -58,9 +58,7 @@ export function AdicaoFiscal({ ncm, itens, descricao, naGLME, calculo }: AdicaoF
               {listaNegativa ? "Tributação normal · lista negativa" : "Diferimento (PEAP)"}
             </span>
             <p className="text-muted-foreground">
-              {consulta.regra?.fonte === "efisco"
-                ? <>Alíquota aplicada pelo e-Fisco da SEFAZ-PE (DMI) — {consulta.regra.descricao}. Não consta no Anexo 1.</>
-                : consulta.regra
+              {consulta.regra
                 ? <>Anexo I, item {consulta.regra.item} {consulta.nivel && NIVEL[consulta.nivel]} — {consulta.regra.descricao}</>
                 : "Alíquota padrão: NCM e capítulo sem regra específica no Anexo I"}
             </p>
