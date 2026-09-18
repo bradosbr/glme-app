@@ -15,6 +15,13 @@
       "when": 1789568365650,
       "tag": "0001_unaccent_e_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789754964102,
+      "tag": "0002_usuario_empresas_e_chave_portal",
+      "breakpoints": true
     }
   ]
 }

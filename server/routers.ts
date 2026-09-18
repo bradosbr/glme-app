@@ -23,7 +23,14 @@ import {
   deleteUser,
   requestPasswordReset,
   touchLastSignedIn,
+  listarEmpresasDoUsuario,
+  vincularEmpresa,
+  desvincularEmpresa,
+  getChavePortal,
+  salvarChavePortal,
+  removerChavePortal,
 } from "./db";
+import { cifrar, criptografiaDisponivel, mascarar } from "./cripto";
 import axios from "axios";
 import * as xml2js from "xml2js";
 import { parsearDuimpPDF, type DuimpParsedData } from "./duimpParser";
@@ -637,6 +644,58 @@ export const appRouter = router({
       }),
   }),
 
+  // ===== MINHA CONTA: chave do Portal Único e empresas do usuário logado =====
+  // Todas as operações usam ctx.user.id: ninguém lê nem altera dados de outro usuário.
+  conta: router({
+    chavePortal: protectedProcedure.query(async ({ ctx }) => {
+      const chave = await getChavePortal(ctx.user.id);
+      return {
+        configurada: Boolean(chave),
+        // Só o fim do Client-Id; o Client-Secret nunca sai do servidor
+        clientId: chave ? mascarar(chave.clientId) : null,
+        atualizadaEm: chave?.updatedAt ?? null,
+        criptografiaDisponivel: criptografiaDisponivel(),
+      };
+    }),
+
+    salvarChavePortal: protectedProcedure
+      .input(z.object({
+        clientId: z.string().trim().min(8, "Client-Id inválido").max(255),
+        clientSecret: z.string().trim().min(8, "Client-Secret inválido").max(2000),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (!criptografiaDisponivel()) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "O servidor não tem a chave de criptografia configurada (CHAVE_CRIPTOGRAFIA). A chave de acesso não foi salva.",
+          });
+        }
+        await salvarChavePortal(ctx.user.id, input.clientId, cifrar(input.clientSecret));
+        return { success: true } as const;
+      }),
+
+    removerChavePortal: protectedProcedure.mutation(async ({ ctx }) => {
+      await removerChavePortal(ctx.user.id);
+      return { success: true } as const;
+    }),
+
+    empresas: protectedProcedure.query(({ ctx }) => listarEmpresasDoUsuario(ctx.user.id)),
+
+    vincularEmpresa: protectedProcedure
+      .input(z.object({ importadorId: z.number().int().positive() }))
+      .mutation(async ({ input, ctx }) => {
+        await vincularEmpresa(ctx.user.id, input.importadorId);
+        return { success: true } as const;
+      }),
+
+    desvincularEmpresa: protectedProcedure
+      .input(z.object({ importadorId: z.number().int().positive() }))
+      .mutation(async ({ input, ctx }) => {
+        await desvincularEmpresa(ctx.user.id, input.importadorId);
+        return { success: true } as const;
+      }),
+  }),
+
   // ===== IMPORTADORES =====
   importadores: router({
     listar: protectedProcedure.query(async () => {
@@ -665,8 +724,13 @@ export const appRouter = router({
         email: z.string().optional(),
         editalDBF: z.string().optional(),
       }))
-      .mutation(async ({ input }) => {
-        return await upsertImportador(input);
+      .mutation(async ({ input, ctx }) => {
+        const salvo = await upsertImportador(input);
+        // Quem cadastra a empresa passa a tê-la em "minhas empresas" (pode desvincular depois)
+        if (salvo && "id" in salvo && typeof salvo.id === "number") {
+          await vincularEmpresa(ctx.user.id, salvo.id);
+        }
+        return salvo;
       }),
 
     buscarPorCNPJ: protectedProcedure

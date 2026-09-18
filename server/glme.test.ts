@@ -39,6 +39,7 @@ vi.mock("./db", () => ({
   getImportadorByCnpj: vi.fn().mockResolvedValue(undefined),
   getUserByOpenId: vi.fn().mockResolvedValue(undefined),
   upsertUser: vi.fn().mockResolvedValue(undefined),
+  vincularEmpresa: vi.fn().mockResolvedValue(undefined),
 }));
 
 function createAuthContext(): TrpcContext {
@@ -85,6 +86,9 @@ describe("GLME - Importadores", () => {
       editalDBF: "001/2024",
     });
     expect(result).toHaveProperty("cnpj");
+    // Quem cadastra fica vinculado à empresa ("minhas empresas")
+    const { vincularEmpresa } = await import("./db");
+    expect(vincularEmpresa).toHaveBeenCalledWith(1, 1);
   });
 
   it("exclui um importador por ID", async () => {

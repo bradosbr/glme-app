@@ -1,4 +1,4 @@
-import { boolean, integer, pgEnum, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 // Enums do Postgres são tipos globais: nomes específicos para não colidir
 export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
@@ -69,3 +69,35 @@ export const recintos = pgTable("recintos", {
 
 export type Recinto = typeof recintos.$inferSelect;
 export type InsertRecinto = typeof recintos.$inferInsert;
+
+// Vínculo usuário ↔ empresa ("minhas empresas"): as empresas do cadastro de importadores
+// pelas quais o usuário responde. Some junto com o usuário ou com a empresa.
+export const usuarioEmpresas = pgTable(
+  "usuario_empresas",
+  {
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+    userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    importadorId: integer("importadorId").notNull().references(() => importadores.id, { onDelete: "cascade" }),
+    createdAt: carimbo("createdAt").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("usuario_empresas_usuario_importador").on(t.userId, t.importadorId),
+    index("usuario_empresas_importador").on(t.importadorId),
+  ],
+);
+
+export type UsuarioEmpresa = typeof usuarioEmpresas.$inferSelect;
+
+// Chave de acesso do Portal Único (par Client-Id / Client-Secret), gerada pelo próprio usuário
+// no Portal com o e-CPF dele. Uma por usuário. O Client-Secret fica cifrado (server/cripto.ts)
+// e nunca é devolvido ao navegador.
+export const chavesPortalUnico = pgTable("chaves_portal_unico", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+  userId: integer("userId").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  clientId: varchar("clientId", { length: 255 }).notNull(),
+  clientSecretCifrado: text("clientSecretCifrado").notNull(),
+  createdAt: carimbo("createdAt").defaultNow().notNull(),
+  updatedAt: carimbo("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+});
+
+export type ChavePortalUnico = typeof chavesPortalUnico.$inferSelect;

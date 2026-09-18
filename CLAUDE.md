@@ -37,13 +37,16 @@ server/
   duimpParser.ts            # Parser do texto do extrato DUIMP
   sefazCadastro.ts          # Webservice CadConsultaCadastro4 (IE e situação cadastral) com certificado A1
   certs/icpBrasil.ts        # Raiz ICP-Brasil v10 (a SEFAZ usa cadeia ICP-Brasil, fora do repositório do Node)
+  cripto.ts                 # AES-256-GCM para segredos no banco (CHAVE_CRIPTOGRAFIA)
+  chavePortal.ts            # Decifra a chave de acesso do Portal Único do usuário, só no servidor
   scripts/seedAdmin.ts      # pnpm db:seed — cria o admin inicial
   scripts/migrarMysqlParaPostgres.ts  # pnpm db:migrar-dados — migração única MySQL -> Postgres
 shared/                     # Tipos e constantes compartilhados
   sefazUF.ts                # Por UF: webservice de consulta cadastral (15 UFs) e link de consulta (27)
 drizzle/
-  schema.ts                 # Schema do banco (users, importadores, recintos)
+  schema.ts                 # Schema do banco (users, importadores, recintos, usuario_empresas, chaves_portal_unico)
   0000_*.sql, 0001_*.sql    # Migrações Postgres (baseline + unaccent/RLS)
+  0002_*.sql                # Vínculo usuário ↔ empresas e chave de acesso do Portal Único (com RLS)
 vercel.json                 # Build, estáticos, região, maxDuration e fallback do SPA
 ```
 
@@ -72,6 +75,7 @@ vercel.json                 # Build, estáticos, região, maxDuration e fallback
 | `MYSQL_URL` | Só na migração | Origem MySQL para `db:migrar-dados` (uso único) |
 | `CERTIFICADO_A1_BASE64` | Não | Arquivo .pfx do e-CNPJ A1 em base64 — consulta de IE nas SEFAZ |
 | `CERTIFICADO_A1_SENHA` | Com o certificado | Senha do .pfx |
+| `CHAVE_CRIPTOGRAFIA` | Para salvar chaves | 32 bytes em base64, diferente por ambiente — cifra o Client-Secret do Portal Único |
 
 Na connection string, substitua `[YOUR-PASSWORD]` **inclusive os colchetes** pela senha.
 Senha entre colchetes gera `password authentication failed` no pooler.
@@ -144,6 +148,11 @@ A migração vai para a produção **antes** do código novo, então a versão a
   exigem login (`protectedProcedure`); usuários exigem admin.
 - **"Usuário ou senha inválidos"** também aparece quando o app está sem banco (`DATABASE_URL` vazia ou
   malformada). Se aparecer com credenciais corretas, confira a variável antes da senha.
+- **Minha conta**: cada usuário guarda a própria chave de acesso do Portal Único (Client-Id / Client-Secret,
+  gerada por ele no Portal com e-CPF e representação de importador). O Client-Secret é cifrado (AES-256-GCM) e
+  nunca volta ao navegador; a tela mostra só o fim do Client-Id. "Minhas empresas" liga o usuário a importadores
+  do cadastro; quem cadastra um importador fica vinculado a ele. Rotas `conta.*` só operam sobre o usuário logado.
+  A consulta da DUIMP pela API ainda não usa a chave guardada (integração a corrigir: `/autenticar/chave-acesso`).
 - **Funções dedicadas**: `api/trpc/duimp.consultarAPI.js` (60s) e `api/trpc/sefaz.consultarCadastro.js` (30s)
   só existem para ter `maxDuration` maior; `server/_core/app.ts` reconstrói o caminho quando o Vercel
   entrega a rota dinâmica reescrita.
@@ -173,7 +182,7 @@ A migração vai para a produção **antes** do código novo, então a versão a
 - Geração de PDF com layout oficial da GLME (jsPDF, no navegador)
 - Cadastro de importadores com busca por CNPJ (BrasilAPI / ReceitaWS) e inscrição estadual pela SEFAZ da UF
 - Login local (usuário/senha, scrypt) e administração de usuários
-- 102 testes automatizados (vitest)
+- 117 testes automatizados (vitest)
 
 ## Comandos
 

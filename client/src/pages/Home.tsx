@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -36,6 +36,7 @@ import {
   Search,
   Trash2,
   Upload,
+  UserCog,
   UserRound,
   Users,
 } from "lucide-react";
@@ -55,6 +56,7 @@ import { ImportarDeclaracaoDialog } from "@/components/glme/ImportarDeclaracaoDi
 import { ValoresAdicao } from "@/components/glme/ValoresAdicao";
 import { SituacaoCadastral, type EstadoConsultaSefaz } from "@/components/glme/SituacaoCadastral";
 import { cadastroDaUF } from "@shared/sefazUF";
+import { MinhaContaDialog } from "@/components/glme/MinhaContaDialog";
 
 const SECOES = [
   { id: "uf", rotulo: "UF" },
@@ -204,6 +206,11 @@ export default function Home() {
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [cnpjStatus, setCnpjStatus] = useState<"idle" | "ok" | "error">("idle");
 
+  // ===== MINHA CONTA (chave do Portal Único e empresas do usuário) =====
+  const [showConta, setShowConta] = useState(false);
+  const utils = trpc.useUtils();
+  const { data: minhasEmpresas = [] } = trpc.conta.empresas.useQuery();
+
   // ===== CADASTRO DE IMPORTADORES =====
   const [showCadastro, setShowCadastro] = useState(false);
   const [editalDBFCadastro, setEditalDBFCadastro] = useState("");
@@ -215,8 +222,9 @@ export default function Home() {
   const { data: importadoresBD = [], refetch: refetchImportadores } = trpc.importadores.listar.useQuery();
   const salvarImportadorMutation = trpc.importadores.salvar.useMutation({
     onSuccess: () => {
-      toast.success("Importador salvo no cadastro.");
+      toast.success("Importador salvo no cadastro e vinculado às suas empresas.");
       refetchImportadores();
+      utils.conta.empresas.invalidate();
       setShowCadastro(false);
     },
     onError: (e) => toast.error(`Erro ao salvar: ${e.message}`),
@@ -769,6 +777,9 @@ export default function Home() {
           </a>
           <div className="flex items-center gap-1">
             <span className="mr-2 hidden text-sm text-muted-foreground md:inline">{user?.name || user?.username}</span>
+            <Button variant="ghost" size="icon" aria-label="Minha conta" title="Minha conta" onClick={() => setShowConta(true)}>
+              <UserCog />
+            </Button>
             {isAdmin && (
               <Button variant="ghost" size="icon" aria-label="Usuários" title="Usuários" onClick={() => navigate("/usuarios")}>
                 <Users />
@@ -847,9 +858,22 @@ export default function Home() {
                 <SelectValue placeholder="Usar importador cadastrado" />
               </SelectTrigger>
               <SelectContent>
-                {importadoresBD.map((imp: any) => (
-                  <SelectItem key={imp.id} value={String(imp.id)}>{imp.razaoSocial}</SelectItem>
-                ))}
+                {minhasEmpresas.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Minhas empresas</SelectLabel>
+                    {minhasEmpresas.map((imp) => (
+                      <SelectItem key={imp.id} value={String(imp.id)}>{imp.razaoSocial}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+                <SelectGroup>
+                  {minhasEmpresas.length > 0 && <SelectLabel>Demais cadastradas</SelectLabel>}
+                  {importadoresBD
+                    .filter((imp: any) => !minhasEmpresas.some((m) => m.id === imp.id))
+                    .map((imp: any) => (
+                      <SelectItem key={imp.id} value={String(imp.id)}>{imp.razaoSocial}</SelectItem>
+                    ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
           )}
@@ -1213,9 +1237,12 @@ export default function Home() {
         consultandoAPI={consultarDuimpAPIMutation.isPending}
       />
 
+      {/* ===== Minha conta ===== */}
+      <MinhaContaDialog open={showConta} onOpenChange={setShowConta} importadores={importadoresBD as any[]} />
+
       {/* ===== Importadores ===== */}
       <Dialog open={showCadastro} onOpenChange={setShowCadastro}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-brand-navy">Importadores</DialogTitle>
             <DialogDescription>Use um importador cadastrado ou salve o importador atual com o edital DBF.</DialogDescription>

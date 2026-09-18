@@ -1,7 +1,7 @@
-import { eq, ilike, or, sql } from "drizzle-orm";
+import { and, eq, ilike, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { InsertUser, users, importadores, recintos, InsertImportador, InsertRecinto } from "../drizzle/schema";
+import { InsertUser, users, importadores, recintos, InsertImportador, InsertRecinto, usuarioEmpresas, chavesPortalUnico } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { hashPassword } from "./password";
 
@@ -212,8 +212,9 @@ export async function upsertImportador(data: InsertImportador) {
     await db.update(importadores).set({ ...data, updatedAt: new Date() }).where(eq(importadores.id, existing.id));
     return { ...existing, ...data };
   } else {
-    await db.insert(importadores).values(data);
-    return data;
+    // returning(): o id do novo cadastro é usado para vincular a empresa ao usuário
+    const [novo] = await db.insert(importadores).values(data).returning();
+    return novo;
   }
 }
 
@@ -320,4 +321,58 @@ export async function seedRecintos() {
     });
   }
   console.log("[DB] Recintos seeded successfully");
+}
+
+// ===== EMPRESAS DO USUÁRIO ("minhas empresas") =====
+
+export async function listarEmpresasDoUsuario(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const linhas = await db
+    .select({ importador: importadores, vinculadoEm: usuarioEmpresas.createdAt })
+    .from(usuarioEmpresas)
+    .innerJoin(importadores, eq(usuarioEmpresas.importadorId, importadores.id))
+    .where(eq(usuarioEmpresas.userId, userId))
+    .orderBy(importadores.razaoSocial);
+  return linhas.map((l) => ({ ...l.importador, vinculadoEm: l.vinculadoEm }));
+}
+
+/** Vincula a empresa ao usuário; repetir o vínculo não gera erro. */
+export async function vincularEmpresa(userId: number, importadorId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(usuarioEmpresas).values({ userId, importadorId }).onConflictDoNothing();
+}
+
+export async function desvincularEmpresa(userId: number, importadorId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(usuarioEmpresas)
+    .where(and(eq(usuarioEmpresas.userId, userId), eq(usuarioEmpresas.importadorId, importadorId)));
+}
+
+// ===== CHAVE DE ACESSO DO PORTAL ÚNICO (Client-Secret sempre cifrado) =====
+
+export async function getChavePortal(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [chave] = await db.select().from(chavesPortalUnico).where(eq(chavesPortalUnico.userId, userId)).limit(1);
+  return chave;
+}
+
+export async function salvarChavePortal(userId: number, clientId: string, clientSecretCifrado: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(chavesPortalUnico)
+    .values({ userId, clientId, clientSecretCifrado })
+    .onConflictDoUpdate({
+      target: chavesPortalUnico.userId,
+      set: { clientId, clientSecretCifrado, updatedAt: new Date() },
+    });
+}
+
+export async function removerChavePortal(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(chavesPortalUnico).where(eq(chavesPortalUnico.userId, userId));
 }
