@@ -27,6 +27,7 @@ import {
 import axios from "axios";
 import * as xml2js from "xml2js";
 import { parsearDuimpPDF, type DuimpParsedData } from "./duimpParser";
+import { consultarCadastroSefaz, statusCertificado, ErroSefaz, UFS_ATENDIDAS } from "./sefazCadastro";
 
 /**
  * Mapeia os dados brutos da API do Portal Único para o formato DuimpParsedData.
@@ -57,12 +58,21 @@ function mapearDuimpAPIParaGLME(data: Record<string, unknown>): DuimpParsedData 
     }],
     quantidade: get(item, "quantidade", "quantidadeEstatistica"),
     valorFOB: get(item, "valorFob", "valorFOB"),
+    valorAduaneiro: get(item, "valorAduaneiro", "valorAduaneiroReal", "baseCalculoII", "baseCalculo"),
+    pesoLiquido: get(item, "pesoLiquido", "pesoLiquidoKg"),
     baseCalculo: get(item, "baseCalculoII", "baseCalculo"),
     ii: get(item, "valorII", "impostoImportacao"),
     ipi: get(item, "valorIPI", "ipi"),
     pis: get(item, "valorPIS", "pisPasep"),
     cofins: get(item, "valorCOFINS", "cofins"),
   }));
+
+  // Tributos federais: soma dos itens (a API não traz o total pronto)
+  const somar = (campo: "ii" | "ipi" | "pis" | "cofins") =>
+    adicoes.reduce((t, a) => t + Math.round(parseFloat(a[campo] || "0") * 100), 0);
+  const [ii, ipi, pis, cofins] = [somar("ii"), somar("ipi"), somar("pis"), somar("cofins")];
+  const taxaSiscomex = get(data, "taxaSiscomex", "taxaUtilizacaoSiscomex");
+  const totalImpostos = ii + ipi + pis + cofins + Math.round(parseFloat(taxaSiscomex || "0") * 100);
 
   return {
     numeroDuimp: get(data, "numeroDuimp", "numero"),
@@ -78,7 +88,12 @@ function mapearDuimpAPIParaGLME(data: Record<string, unknown>): DuimpParsedData 
     valorFOBReais: get(data, "valorFobReais", "totalFobBrl"),
     taxaCambio: get(data, "taxaCambio"),
     valorAduaneiro: get(data, "valorAduaneiro"),
-    taxaSiscomex: get(data, "taxaSiscomex", "taxaUtilizacaoSiscomex"),
+    taxaSiscomex,
+    ii: (ii / 100).toFixed(2),
+    ipi: (ipi / 100).toFixed(2),
+    pis: (pis / 100).toFixed(2),
+    cofins: (cofins / 100).toFixed(2),
+    impostosTotal: totalImpostos > 0 ? (totalImpostos / 100).toFixed(2) : undefined,
     adicoes,
   };
 }
@@ -313,7 +328,27 @@ function parseDIXML(xmlContent: string): Promise<Record<string, unknown>> {
             }
           }
 
+          // Pagamentos da DI (<pagamento>): o valor efetivamente recolhido da Taxa Siscomex
+          // (receita 7811) prevalece sobre o texto livre. As demais receitas desconhecidas
+          // são devolvidas à parte para o usuário avaliar se entram como despesa aduaneira.
+          const RECEITAS_CONHECIDAS = new Set(["0086", "1038", "5602", "5629", "7811"]);
+          const pagamentosRaw = di?.pagamento;
+          const pagamentos: Record<string, unknown>[] = pagamentosRaw
+            ? (Array.isArray(pagamentosRaw) ? pagamentosRaw : [pagamentosRaw]) as Record<string, unknown>[]
+            : [];
+          let taxaSiscomexPaga = 0;
+          const outrasReceitas: { codigo: string; valor: string }[] = [];
+          for (const p of pagamentos) {
+            const codigo = getVal(p, "codigoReceita").padStart(4, "0");
+            const valor = parseInt(getVal(p, "valorReceita").replace(/\D/g, "") || "0", 10);
+            if (!valor) continue;
+            if (codigo === "7811") taxaSiscomexPaga += valor;
+            else if (!RECEITAS_CONHECIDAS.has(codigo)) outrasReceitas.push({ codigo, valor: (valor / 100).toFixed(2) });
+          }
+          if (taxaSiscomexPaga > 0) taxaSiscomex = taxaSiscomexPaga;
+
           const totalImpostosReais = ((totalII + totalIPI + totalPIS + totalCOFINS + taxaSiscomex) / 100).toFixed(2);
+          const totalTributosFederais = ((totalII + totalIPI + totalPIS + totalCOFINS) / 100).toFixed(2);
 
           // Calcular taxa de câmbio FOB (BRL por USD)
           // Prioridade 1: campo condicaoVendaTaxaCambio da primeira adição (mais preciso)
@@ -364,6 +399,9 @@ function parseDIXML(xmlContent: string): Promise<Record<string, unknown>> {
             const adIPIVal = adIPIRaw ? parseInt(adIPIRaw.replace(/\D/g, ""), 10) : 0;
             const adPISVal = adPISRaw ? parseInt(adPISRaw.replace(/\D/g, ""), 10) : 0;
             const adCOFINSVal = adCOFINSRaw ? parseInt(adCOFINSRaw.replace(/\D/g, ""), 10) : 0;
+            // Peso líquido (kg, 5 casas decimais) — critério de rateio do AFRMM
+            const pesoRaw = getVal(ad, "dadosMercadoriaPesoLiquido");
+            const pesoLiquido = pesoRaw ? (parseInt(pesoRaw.replace(/\D/g, ""), 10) / 100000).toFixed(5) : "";
 
             return {
               numero: numero.replace(/^0+/, "") || String(idx + 1),
@@ -378,6 +416,7 @@ function parseDIXML(xmlContent: string): Promise<Record<string, unknown>> {
               valorAduaneiro,
               paisOrigem,
               fornecedor,
+              pesoLiquido,
               impostos: {
                 ii: (adIIVal / 100).toFixed(2),
                 ipi: (adIPIVal / 100).toFixed(2),
@@ -417,6 +456,10 @@ function parseDIXML(xmlContent: string): Promise<Record<string, unknown>> {
             totalPIS: (totalPIS / 100).toFixed(2),
             totalCOFINS: (totalCOFINS / 100).toFixed(2),
             taxaSiscomex: (taxaSiscomex / 100).toFixed(2),
+            totalTributosFederais,
+            outrasReceitas,
+            // Soma dos valores aduaneiros das adições (base do II): não depende do texto livre
+            valorAduaneiroTotal: (adicoesParsed.reduce((t, a) => t + Math.round(parseFloat(a.valorAduaneiro || "0") * 100), 0) / 100).toFixed(2),
             importador: {
               nome: importadorNome,
               cnpj: importadorCNPJ,
@@ -570,6 +613,27 @@ export const appRouter = router({
       .input(z.object({ cnpj: z.string() }))
       .query(async ({ input }) => {
         return await buscarCNPJ(input.cnpj);
+      }),
+  }),
+
+  // ===== SEFAZ: cadastro de contribuintes do ICMS (certificado A1 da empresa) =====
+  sefaz: router({
+    certificado: protectedProcedure.query(() => ({ ...statusCertificado(), ufsAtendidas: UFS_ATENDIDAS })),
+
+    // Mutation para não ser agrupada nem reaproveitada do cache: cada consulta vai à SEFAZ
+    consultarCadastro: protectedProcedure
+      .input(z.object({ cnpj: z.string(), uf: z.string().length(2).default("PE") }))
+      .mutation(async ({ input }) => {
+        try {
+          return await consultarCadastroSefaz(input.cnpj, input.uf);
+        } catch (e) {
+          if (e instanceof ErroSefaz) {
+            const code = e.tipo === "nao_configurado" || e.tipo === "certificado" ? "PRECONDITION_FAILED"
+              : e.tipo === "uf" ? "BAD_REQUEST" : "BAD_GATEWAY";
+            throw new TRPCError({ code, message: e.message });
+          }
+          throw e;
+        }
       }),
   }),
 

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
+import { calcularICMS, type DespesasDeclaracao } from "../client/src/lib/calculoICMS";
+
+const semDespesas: DespesasDeclaracao = { taxaSiscomex: 0, outrasDespesas: 0, iofCambio: 0, afrmm: 0, incluirAFRMM: false };
 
 // Mock do banco de dados para testes
 vi.mock("./db", () => ({
@@ -469,23 +472,25 @@ describe("GLME - Cálculo ICMS Lista Negativa (Fórmula Correta)", () => {
     expect(adicoes[0].impostos.total).toBe("200.00");
   });
 
-  it("fórmula ICMS: (impostos + taxaSiscomex/adições) ÷ 0,795 × alíquota", () => {
-    // Exemplo: II=100, IPI=50, PIS=10, COFINS=40, taxaSiscomex=200 (1 adição)
-    // somaImpostos = 100 + 50 + 10 + 40 + 200 = 400
-    // valorICMS = (400 / 0.795) * (20.5 / 100) = 503.14... * 0.205 ≈ 103.14
-    const somaImpostos = 100 + 50 + 10 + 40 + 200; // 400
-    const aliquota = 20.5 / 100;
-    const valorICMS = (somaImpostos / 0.795) * aliquota;
-    expect(valorICMS).toBeCloseTo(103.14, 0);
+  it("fórmula ICMS a 20,5%: (tributos + taxa) ÷ 0,795 × 20,5%", () => {
+    // II=100, IPI=50, PIS=10, COFINS=40 + Taxa Siscomex 200 = 400 → 400 ÷ 0,795 = 503,14 × 20,5% = 103,14
+    const r = calcularICMS(
+      [{ adicao: "1", ncm: "84713012", valorAduaneiro: 0, ii: 100, ipi: 50, pis: 10, cofins: 40 }],
+      { ...semDespesas, taxaSiscomex: 200 },
+    );
+    expect(r.adicoes[0].divisor).toBe(0.795);
+    expect(r.adicoes[0].icms).toBe(103.14);
   });
 
-  it("fórmula ICMS com alíquota 29% (tabaco): (impostos + taxa) ÷ 0,795 × 0,29", () => {
-    // somaImpostos = 200 + 200 (taxa) = 400
-    // valorICMS = (400 / 0.795) * 0.29 ≈ 145.91
-    const somaImpostos = 400;
-    const aliquota = 29 / 100;
-    const valorICMS = (somaImpostos / 0.795) * aliquota;
-    expect(valorICMS).toBeCloseTo(145.91, 0);
+  it("fórmula ICMS a 29% (tabaco) divide por 0,71, não por 0,795", () => {
+    // 400 ÷ 0,71 = 563,38 × 29% = 163,38 (com 0,795 dava 145,91 — ICMS a menor)
+    const r = calcularICMS(
+      [{ adicao: "1", ncm: "24021000", valorAduaneiro: 0, ii: 100, ipi: 50, pis: 10, cofins: 40 }],
+      { ...semDespesas, taxaSiscomex: 200 },
+    );
+    expect(r.adicoes[0].aliquota).toBe(29);
+    expect(r.adicoes[0].divisor).toBe(0.71);
+    expect(r.adicoes[0].icms).toBe(163.38);
   });
 });
 
@@ -824,30 +829,25 @@ describe("GLME - Taxa FOB do campo condicaoVendaTaxaCambio", () => {
 });
 
 describe("GLME - Fórmula ICMS com Base de Cálculo da Adição", () => {
-  it("fórmula: (BaseCalculo + II + IPI + PIS + COFINS + TaxaSISCOMEX) ÷ 0,795 × alíquota", () => {
-    // Base de Cálculo = 5159.60 (iiBaseCalculo do XML)
-    // II=100, IPI=50, PIS=10, COFINS=40 → impostos=200
-    // taxaSiscomex = 200 (1 adição)
-    // somaBase = 5159.60 + 200 + 200 = 5559.60
-    // NCM 24021000 → prefixo 2402 → alíquota 29%
-    // valorICMS = (5559.60 / 0.795) * 0.29 ≈ 2028.08
-    const baseCalculo = 5159.60;
-    const impostos = 100 + 50 + 10 + 40;
-    const taxaSiscomex = 200;
-    const somaBase = baseCalculo + impostos + taxaSiscomex;
-    const aliquota = 29 / 100;
-    const valorICMS = (somaBase / 0.795) * aliquota;
-    expect(valorICMS).toBeCloseTo(2028.08, 0);
+  it("fórmula: (valor aduaneiro + II + IPI + PIS + COFINS + Taxa Siscomex) ÷ (1 − alíquota) × alíquota", () => {
+    // 5.159,60 + 200 + 200 = 5.559,60 ÷ 0,71 = 7.830,42 × 29% = 2.270,82
+    const r = calcularICMS(
+      [{ adicao: "1", ncm: "24021000", valorAduaneiro: 5159.6, ii: 100, ipi: 50, pis: 10, cofins: 40 }],
+      { ...semDespesas, taxaSiscomex: 200 },
+    );
+    expect(r.adicoes[0].valorPartida).toBe(5559.6);
+    expect(r.adicoes[0].baseCalculo).toBe(7830.42);
+    expect(r.adicoes[0].icms).toBe(2270.82);
   });
 
   it("fórmula com alíquota padrão 20,5% quando NCM não consta no Anexo I", () => {
-    // BaseCalculo = 1000, impostos = 150, taxaSiscomex = 200
-    // somaBase = 1350
-    // valorICMS = (1350 / 0.795) * 0.205 ≈ 348.30
-    const somaBase = 1000 + 150 + 200;
-    const aliquota = 20.5 / 100;
-    const valorICMS = (somaBase / 0.795) * aliquota;
-    expect(valorICMS).toBeCloseTo(348.30, 0);
+    // 1.000 + 150 + 200 = 1.350 ÷ 0,795 = 1.698,11 × 20,5% = 348,11
+    const r = calcularICMS(
+      [{ adicao: "1", ncm: "84713012", valorAduaneiro: 1000, ii: 150, ipi: 0, pis: 0, cofins: 0 }],
+      { ...semDespesas, taxaSiscomex: 200 },
+    );
+    expect(r.adicoes[0].aliquota).toBe(20.5);
+    expect(r.adicoes[0].icms).toBe(348.11);
   });
 
   it("valorAduaneiro extraído do iiBaseCalculo do XML", async () => {
@@ -869,57 +869,6 @@ describe("GLME - Fórmula ICMS com Base de Cálculo da Adição", () => {
         <importadorEnderecoUf>PE</importadorEnderecoUf>
         <numeroDI>2604023996</numeroDI>
         <viaTransporteNome>MARÍTIMA</viaTransporteNome>
-    </declaracaoImportacao>
-</ListaDeclaracoes>`;
-    const result = await caller.di.parsearXML({ xmlContent: xmlComBaseCalculo });
-    const adicoes = result.adicoes as any[];
-    // iiBaseCalculo = 000000000051748 → 517.48
-    expect(adicoes[0].valorAduaneiro).toBe("517.48");
-  });
-});
-
-describe("GLME - Fórmula ICMS com Base de Cálculo da Adição", () => {
-  it("fórmula: (BaseCalculo + II + IPI + PIS + COFINS + TaxaSISCOMEX) ÷ 0,795 × alíquota", () => {
-    // Base de Cálculo = 5159.60 (iiBaseCalculo do XML)
-    // II=100, IPI=50, PIS=10, COFINS=40 → impostos=200
-    // taxaSiscomex = 200 (1 adição)
-    // somaBase = 5159.60 + 200 + 200 = 5559.60
-    // NCM 24021000 → prefixo 2402 → alíquota 29%
-    // valorICMS = (5559.60 / 0.795) * 0.29 ≈ 2028.08
-    const baseCalculo = 5159.60;
-    const impostos = 100 + 50 + 10 + 40;
-    const taxaSiscomex = 200;
-    const somaBase = baseCalculo + impostos + taxaSiscomex;
-    const aliquota = 29 / 100;
-    const valorICMS = (somaBase / 0.795) * aliquota;
-    expect(valorICMS).toBeCloseTo(2028.08, 0);
-  });
-
-  it("fórmula com alíquota padrão 20,5% quando NCM não consta no Anexo I", () => {
-    const somaBase = 1000 + 150 + 200;
-    const aliquota = 20.5 / 100;
-    const valorICMS = (somaBase / 0.795) * aliquota;
-    expect(valorICMS).toBeCloseTo(348.30, 0);
-  });
-
-  it("valorAduaneiro extraído do iiBaseCalculo do XML", async () => {
-    const ctx = createAuthContext();
-    const caller = appRouter.createCaller(ctx);
-    const xmlComBaseCalculo = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<ListaDeclaracoes>
-    <declaracaoImportacao>
-        <adicao>
-            <dadosMercadoriaCodigoNcm>61151093</dadosMercadoriaCodigoNcm>
-            <iiBaseCalculo>000000000051748</iiBaseCalculo>
-            <condicaoVendaValorReais>000000000051745</condicaoVendaValorReais>
-            <numeroAdicao>008</numeroAdicao>
-        </adicao>
-        <dataRegistro>20260312</dataRegistro>
-        <importadorNome>EMPRESA TESTE LTDA</importadorNome>
-        <importadorNumero>12345678000190</importadorNumero>
-        <importadorEnderecoUf>PE</importadorEnderecoUf>
-        <numeroDI>2604023996</numeroDI>
-        <viaTransporteNome>MARITIMA</viaTransporteNome>
     </declaracaoImportacao>
 </ListaDeclaracoes>`;
     const result = await caller.di.parsearXML({ xmlContent: xmlComBaseCalculo });
@@ -998,5 +947,47 @@ describe("GLME - DUIMP: itens de cada adição", () => {
     const r = parsearDuimpPDF(extrato);
     expect(r.adicoes!.map((a) => a.numero)).toEqual(["1", "2"]);
     expect(r.adicoes![0].descricao).toBe("NOTEBOOK 14 POLEGADAS / NOTEBOOK 16 POLEGADAS");
+  });
+});
+
+describe("GLME - DI: pagamentos, peso líquido e valor aduaneiro", () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ListaDeclaracoes>
+    <declaracaoImportacao>
+        <adicao>
+            <dadosMercadoriaCodigoNcm>84713012</dadosMercadoriaCodigoNcm>
+            <dadosMercadoriaPesoLiquido>000000001234500</dadosMercadoriaPesoLiquido>
+            <iiBaseCalculo>000000090000000</iiBaseCalculo>
+            <numeroAdicao>001</numeroAdicao>
+        </adicao>
+        <adicao>
+            <dadosMercadoriaCodigoNcm>24021000</dadosMercadoriaCodigoNcm>
+            <iiBaseCalculo>000000010000000</iiBaseCalculo>
+            <numeroAdicao>002</numeroAdicao>
+        </adicao>
+        <informacaoComplementar>CIF US$: 1,00 R$: 5,00 TAXA SISCOMEX R$: 999,99</informacaoComplementar>
+        <pagamento><codigoReceita>0086</codigoReceita><valorReceita>000000000100000</valorReceita></pagamento>
+        <pagamento><codigoReceita>7811</codigoReceita><valorReceita>000000000023134</valorReceita></pagamento>
+        <pagamento><codigoReceita>5529</codigoReceita><valorReceita>000000000050000</valorReceita></pagamento>
+        <numeroDI>2604023996</numeroDI>
+    </declaracaoImportacao>
+</ListaDeclaracoes>`;
+
+  it("usa o pagamento da Taxa Siscomex (receita 7811) em vez do texto livre", async () => {
+    const r = await appRouter.createCaller(createAuthContext()).di.parsearXML({ xmlContent: xml });
+    expect(r.taxaSiscomex).toBe("231.34");
+  });
+
+  it("separa receitas desconhecidas para o usuário avaliar", async () => {
+    const r = await appRouter.createCaller(createAuthContext()).di.parsearXML({ xmlContent: xml });
+    expect(r.outrasReceitas).toEqual([{ codigo: "5529", valor: "500.00" }]);
+  });
+
+  it("soma o valor aduaneiro das adições e lê o peso líquido", async () => {
+    const r = await appRouter.createCaller(createAuthContext()).di.parsearXML({ xmlContent: xml });
+    expect(r.valorAduaneiroTotal).toBe("1000000.00");
+    const adicoes = r.adicoes as any[];
+    expect(adicoes[0].pesoLiquido).toBe("12.34500");
+    expect(adicoes[1].pesoLiquido).toBe("");
   });
 });

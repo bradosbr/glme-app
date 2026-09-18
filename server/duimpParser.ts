@@ -58,6 +58,10 @@ export interface DuimpAdicao {
   descricao: string;
   /** Itens da DUIMP que pertencem a esta adição, na ordem do extrato. */
   itens?: DuimpItem[];
+  /** Valor aduaneiro da adição em R$ (base do II). */
+  valorAduaneiro?: string;
+  /** Peso líquido em kg — critério de rateio do AFRMM. */
+  pesoLiquido?: string;
   baseCalculo?: string;
   ii?: string;
   ipi?: string;

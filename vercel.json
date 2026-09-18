@@ -7,6 +7,9 @@
   "functions": {
     "api/trpc/duimp.consultarAPI.js": {
       "maxDuration": 60
+    },
+    "api/trpc/sefaz.consultarCadastro.js": {
+      "maxDuration": 30
     }
   },
   "rewrites": [
