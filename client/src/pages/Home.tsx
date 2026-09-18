@@ -201,6 +201,8 @@ export default function Home() {
   }, [secaoAtiva]);
   const [gerandoPDF, setGerandoPDF] = useState(false);
   const [confirmarLimpeza, setConfirmarLimpeza] = useState(false);
+  // Muda a cada "Limpar": recria a janela de importação (número, versão e empresa da DUIMP em branco)
+  const [versaoGuia, setVersaoGuia] = useState(0);
 
   // ===== Adquirente igual ao Importador =====
   const [adquirenteIgualImportador, setAdquirenteIgualImportador] = useState(true);
@@ -644,6 +646,16 @@ export default function Home() {
     if (dados.cnpj.replace(/\D/g, "") !== formData.importador.cnpj.replace(/\D/g, "")) return;
     if (dados.inscricaoEstadual) updateImportador("inscricaoEstadual", dados.inscricaoEstadual);
     if (editalDBF) updateICMSCalculo("editalDBF", editalDBF);
+  };
+
+  /** Nova guia: formulário, consulta de CNPJ/SEFAZ e janela de importação voltam ao início. */
+  const handleLimpar = () => {
+    resetForm();
+    setAdquirenteIgualImportador(true);
+    setCnpjBusca("");
+    setCnpjStatus("idle");
+    sefaz.limpar();
+    setVersaoGuia((v) => v + 1);
   };
 
   const handleGerarPDF = async () => {
@@ -1216,6 +1228,7 @@ export default function Home() {
 
       {/* ===== Importar DI / DUIMP ===== */}
       <ImportarDeclaracaoDialog
+        key={versaoGuia}
         open={showImportar}
         onOpenChange={setShowImportar}
         onArquivo={handleImportarArquivo}
@@ -1246,7 +1259,7 @@ export default function Home() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => { resetForm(); setAdquirenteIgualImportador(true); }}>
+            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={handleLimpar}>
               Limpar
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronDown, FileCode2, FileText, KeyRound, Link2, Loader2, UploadCloud } from "lucide-react";
+import { AlertTriangle, ChevronDown, FileCode2, FileText, Link2, Loader2, UploadCloud } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -45,11 +45,10 @@ export function ImportarDeclaracaoDialog({
   const [versaoDuimp, setVersaoDuimp] = useState("");
   const [empresaId, setEmpresaId] = useState<number | undefined>();
 
-  // Ao abrir: a empresa da seção Importador, se tiver chave; senão, a única disponível
+  // Ao abrir: a empresa da seção Importador, se tiver chave; sem importador na guia, nenhuma
   useEffect(() => {
     if (!open) return;
-    const sugerida = empresasComChave.find((e) => e.id === empresaSugeridaId);
-    setEmpresaId(sugerida?.id ?? (empresasComChave.length === 1 ? empresasComChave[0].id : undefined));
+    setEmpresaId(empresasComChave.find((e) => e.id === empresaSugeridaId)?.id);
   }, [open, empresaSugeridaId, empresasComChave]);
 
   const empresa = empresasComChave.find((e) => e.id === empresaId);
@@ -121,19 +120,14 @@ export function ImportarDeclaracaoDialog({
           </CollapsibleTrigger>
           <CollapsibleContent className="space-y-3 pt-2">
             <p className="rounded-xl bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
-              A consulta usa a chave de acesso do Portal Único cadastrada na empresa (seção Importador › Cadastro da empresa)
+              A consulta usa a chave de acesso do Portal Único cadastrada na empresa (botão Cadastro, na barra de ações)
               e traz todos os itens, com valor aduaneiro e tributos, para o cálculo do ICMS.
             </p>
 
             {empresasComChave.length === 0 ? (
               <p className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                Nenhuma empresa com chave de acesso disponível para você. Cadastre a chave em Importador › Cadastro da empresa.
-              </p>
-            ) : empresasComChave.length === 1 ? (
-              <p className="flex items-center gap-2 text-sm">
-                <KeyRound className="size-4 shrink-0 text-brand-sky" />
-                <span>Chave de acesso de <strong className="font-medium">{empresasComChave[0].razaoSocial}</strong></span>
+                Nenhuma empresa com chave de acesso disponível para você. Cadastre a chave no botão Cadastro, na barra de ações.
               </p>
             ) : (
               <div className="space-y-1.5">
