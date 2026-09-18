@@ -77,6 +77,7 @@ function paraCalculo(
     pis: paraNumero(valores.pis),
     cofins: paraNumero(valores.cofins),
     pesoLiquido: paraNumero(valores.pesoLiquido) || undefined,
+    aliquota: paraNumero(valores.aliquota) || undefined,
   };
 }
 

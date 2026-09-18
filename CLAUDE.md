@@ -176,7 +176,9 @@ A migração vai para a produção **antes** do código novo, então a versão a
 - **Cálculo do ICMS**: `(valor aduaneiro + tributos + despesas aduaneiras) ÷ (1 − alíquota) × alíquota`, com o
   divisor da alíquota **da mercadoria** (informativo SEFAZ-PE "Comércio Exterior", item 2.5). Adições com
   alíquotas diferentes formam grupos separados. Taxa Siscomex, taxas de anuentes e IOF-câmbio são rateados pelo
-  valor aduaneiro; o AFRMM (opcional) pelo peso líquido — Ajuste SINIEF 32/21. O rateio inclui as adições de
+  **peso líquido**, como o e-Fisco faz na DMI (valor aduaneiro se faltar o peso de alguma adição); o AFRMM
+  (opcional, fora da base na DMI oficial) também pelo peso. Cada adição aceita alíquota informada à mão, que
+  prevalece sobre a da NCM. A 3923.30 a 22,5% é regra observada no e-Fisco (`fonte: "efisco"`), não do Anexo 1. O rateio inclui as adições de
   tributação normal. Sem os valores de cada adição (ex.: extrato da DUIMP em PDF), o cálculo cai para os totais
   da declaração, com aviso.
 - **PDF da guia**: o campo 5.4 da frente traz uma linha por alíquota; o verso, a memória completa (VT, VTI, VF).
@@ -205,7 +207,7 @@ A migração vai para a produção **antes** do código novo, então a versão a
 - Cadastro de empresas na seção Importador: CNPJ (BrasilAPI / ReceitaWS), inscrição estadual pela SEFAZ da UF,
   edital DBF e chave de acesso do Portal Único
 - Login local (usuário/senha, scrypt) e administração de usuários
-- 142 testes automatizados (vitest)
+- 148 testes automatizados (vitest)
 
 ## Comandos
 

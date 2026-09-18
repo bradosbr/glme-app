@@ -8,8 +8,10 @@
  * - LC 87/1996, art. 13, § 1º, I: o ICMS integra a própria base ("por dentro").
  * - Informativo SEFAZ-PE "Comércio Exterior", item 2.5: divide-se o somatório pela
  *   diferença entre 100 e a alíquota DA MERCADORIA (0,795 para 20,5%; 0,82 para 18%).
- * - Ajuste SINIEF 32/21: Taxa Siscomex e demais despesas rateadas pelo valor aduaneiro
- *   de cada item; AFRMM pelo peso líquido; o rateio alcança itens tributados ou não.
+ * - Ajuste SINIEF 32/21: Taxa Siscomex e demais despesas rateadas entre os itens, tributados ou
+ *   não. O e-Fisco da SEFAZ-PE (DMI) rateia a Taxa Siscomex pelo PESO LÍQUIDO — conferido na DMI
+ *   da DUIMP 26BR00015748228: R$ 493,56 × 885,6 kg ÷ 16.893,75 kg = R$ 25,87 na adição. Por isso o
+ *   padrão é o peso líquido, com o valor aduaneiro como reserva quando falta o peso de alguma adição.
  *
  * Valores monetários são tratados em centavos (inteiros) para que os rateios
  * fechem exatamente com o total da declaração.
@@ -33,6 +35,8 @@ export interface AdicaoParaCalculo extends ValoresAdicao {
   ncm: string;
   /** Regime definido pelo usuário; sem ele, vale a lista negativa do PEAP. */
   regime?: Regime;
+  /** Alíquota informada pelo usuário (%); sem ela, vale a consulta pela NCM. */
+  aliquota?: number;
 }
 
 /** Despesas lançadas uma vez por declaração e rateadas entre as adições. */
@@ -45,6 +49,11 @@ export interface DespesasDeclaracao {
   afrmm: number;
   /** A inclusão do AFRMM na base não é pacífica em PE: fica a critério do usuário. */
   incluirAFRMM: boolean;
+  /**
+   * Critério do rateio da Taxa Siscomex, das outras despesas e do IOF: peso líquido (como o
+   * e-Fisco/DMI da SEFAZ-PE, padrão) ou valor aduaneiro. Sem o peso de todas as adições, usa o valor.
+   */
+  criterioRateio?: "peso" | "valor_aduaneiro";
 }
 
 export type Regime = "diferimento" | "tributacao_normal";
@@ -154,16 +163,18 @@ export function calcularICMS(
   const pesos = adicoes.map((a) => a.pesoLiquido ?? 0);
   const temTodosOsPesos = pesos.length > 0 && pesos.every((p) => p > 0);
 
-  const siscomex = ratear(paraCentavos(despesas.taxaSiscomex), valoresAduaneiros);
-  const outras = ratear(paraCentavos(despesas.outrasDespesas), valoresAduaneiros);
-  const iof = ratear(paraCentavos(despesas.iofCambio), valoresAduaneiros);
+  const porPeso = (despesas.criterioRateio ?? "peso") === "peso" && temTodosOsPesos;
+  const baseRateio = porPeso ? pesos : valoresAduaneiros;
+  const siscomex = ratear(paraCentavos(despesas.taxaSiscomex), baseRateio);
+  const outras = ratear(paraCentavos(despesas.outrasDespesas), baseRateio);
+  const iof = ratear(paraCentavos(despesas.iofCambio), baseRateio);
   // AFRMM pelo peso líquido; sem o peso de todas as adições, usa o valor aduaneiro
   const afrmm = despesas.incluirAFRMM
     ? ratear(paraCentavos(despesas.afrmm), temTodosOsPesos ? pesos : valoresAduaneiros)
     : adicoes.map(() => 0);
 
   const calculadas: AdicaoCalculada[] = adicoes.map((a, i) => {
-    const aliquota = aliquotaDe(a.ncm);
+    const aliquota = a.aliquota !== undefined && a.aliquota > 0 ? a.aliquota : aliquotaDe(a.ncm);
     const tributos = paraCentavos(a.ii) + paraCentavos(a.ipi) + paraCentavos(a.pis) + paraCentavos(a.cofins);
     const desp = siscomex[i] + outras[i] + iof[i] + afrmm[i];
     const partida = valoresAduaneiros[i] + tributos + desp;

@@ -43,7 +43,10 @@ export function AdicaoFiscal({ ncm, itens, descricao, naGLME, calculo }: AdicaoF
         <div className="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
           <div className="rounded-xl bg-brand-sky-soft px-4 py-3 text-brand-navy sm:min-w-[150px]">
             <p className="text-[11px] font-medium uppercase tracking-wide text-brand-navy/70">Alíquota de recolhimento</p>
-            <p className="tabular-nums text-2xl font-semibold leading-tight">{formatarPct(consulta.aliquota)}</p>
+            <p className="tabular-nums text-2xl font-semibold leading-tight">{formatarPct(calculo?.aliquota ?? consulta.aliquota)}</p>
+            {calculo && calculo.aliquota !== consulta.aliquota && (
+              <p className="text-[11px] text-brand-navy/70">informada · NCM: {formatarPct(consulta.aliquota)}</p>
+            )}
           </div>
           <div className="space-y-1.5 text-sm">
             <span
@@ -55,7 +58,9 @@ export function AdicaoFiscal({ ncm, itens, descricao, naGLME, calculo }: AdicaoF
               {listaNegativa ? "Tributação normal · lista negativa" : "Diferimento (PEAP)"}
             </span>
             <p className="text-muted-foreground">
-              {consulta.regra
+              {consulta.regra?.fonte === "efisco"
+                ? <>Alíquota aplicada pelo e-Fisco da SEFAZ-PE (DMI) — {consulta.regra.descricao}. Não consta no Anexo 1.</>
+                : consulta.regra
                 ? <>Anexo I, item {consulta.regra.item} {consulta.nivel && NIVEL[consulta.nivel]} — {consulta.regra.descricao}</>
                 : "Alíquota padrão: NCM e capítulo sem regra específica no Anexo I"}
             </p>

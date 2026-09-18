@@ -43,7 +43,7 @@ import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { ncmNaListaNegativa } from "@/lib/listaNegativa";
-import { formatarMoeda } from "@/lib/aliquotasICMS";
+import { consultarAliquotaNCM, formatarMoeda } from "@/lib/aliquotasICMS";
 import { calcularFormulario, paraNumero, valoresDaDeclaracao } from "@/lib/calculoFormulario";
 import { formatarAliquota, formatarDivisor } from "@/lib/calculoICMS";
 import { cn } from "@/lib/utils";
@@ -1099,6 +1099,7 @@ export default function Home() {
                   <ValoresAdicao
                     id={`ad-${index}-valores`}
                     valores={produto.valores}
+                    aliquotaConsultada={consultarAliquotaNCM(produto.classeTarifaria || produto.ncm).aliquota}
                     onChange={(campo, valor) => updateProduto(index, `valores.${campo}`, valor)}
                   />
                 </div>
@@ -1127,6 +1128,7 @@ export default function Home() {
                       <ValoresAdicao
                         id={`trib-${i}-valores`}
                         valores={ad.valores}
+                        aliquotaConsultada={consultarAliquotaNCM(ad.ncm).aliquota}
                         onChange={(campo, valor) => updateTributada(i, `valores.${campo}`, valor)}
                       />
                     </div>

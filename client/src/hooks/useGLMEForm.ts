@@ -18,6 +18,8 @@ export interface ValoresAdicaoForm {
   pis: string;
   cofins: string;
   pesoLiquido?: string;
+  /** Alíquota do ICMS (%) informada à mão; vazia = consulta pela NCM. */
+  aliquota?: string;
 }
 
 export const VALORES_ADICAO_VAZIOS: ValoresAdicaoForm = { valorAduaneiro: "", ii: "", ipi: "", pis: "", cofins: "" };

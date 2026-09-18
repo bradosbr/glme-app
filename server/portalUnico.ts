@@ -164,7 +164,7 @@ export interface DuimpGeralAPI {
   tributos?: { tributosCalculados?: TributoCalculado[] };
   quantidadeItens?: number;
   /** recintoEntrega só vem em situações especiais de despacho (código de 7 dígitos). */
-  carga?: { recintoEntrega?: Numero };
+  carga?: { recintoEntrega?: Numero; recintoDespacho?: { codigo?: Numero } };
 }
 
 // ---------------------------------------------------------------------------
@@ -248,7 +248,8 @@ export function mapearDuimpAPI(geral: DuimpGeralAPI, itens: ItemDuimpAPI[]): Dui
   const porTerceiro = ativos.find(
     (i) => i.caracterizacaoImportacao?.indicador && i.caracterizacaoImportacao.indicador !== "IMPORTACAO_DIRETA" && texto(i.caracterizacaoImportacao.ni),
   );
-  const recinto = texto(geral.carga?.recintoEntrega).replace(/\D/g, "");
+  // O extrato do Portal traz carga.recintoDespacho; a especificação da API só documenta recintoEntrega
+  const recinto = texto(geral.carga?.recintoDespacho?.codigo ?? geral.carga?.recintoEntrega).replace(/\D/g, "");
 
   return {
     numeroDuimp: texto(geral.identificacao?.numero) || undefined,
