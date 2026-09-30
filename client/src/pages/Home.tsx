@@ -35,7 +35,9 @@ import {
   MapPin,
   Plus,
   Search,
+  ShieldCheck,
   Trash2,
+  Undo2,
   Upload,
   UserCog,
   UserRound,
@@ -161,6 +163,8 @@ export default function Home() {
     updateDocumento,
     updateProduto,
     updateTributada,
+    exonerarAdicao,
+    tributarAdicao,
     updateICMSCalculo,
     addProduto,
     removeProduto,
@@ -1022,6 +1026,17 @@ export default function Home() {
               <article key={index} className="rounded-xl border bg-background/40 p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <h3 className="font-semibold text-brand-navy">Adição {produto.adicao || index + 1}</h3>
+                  {produto.exoneradaManual && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="ml-auto text-muted-foreground"
+                      title="Devolve a adição para a tributação normal, fora da guia"
+                      onClick={() => tributarAdicao(index)}
+                    >
+                      <Undo2 /> Desfazer exoneração
+                    </Button>
+                  )}
                   {formData.produtos.length > 1 && (
                     <Button variant="ghost" size="icon-sm" aria-label={`Remover adição ${produto.adicao || index + 1}`} className="text-muted-foreground hover:text-destructive" onClick={() => removeProduto(index)}>
                       <Trash2 />
@@ -1071,6 +1086,7 @@ export default function Home() {
                   descricao={produto.descricao}
                   naGLME
                   calculo={calculo.produtos[index]}
+                  exoneracaoManual={produto.exoneradaManual}
                 />
               </article>
             ))}
@@ -1079,13 +1095,27 @@ export default function Home() {
               <div className="space-y-3 pt-2">
                 <div>
                   <h3 className="font-semibold text-brand-navy">Tributação normal — fora da GLME ({tributadas.length})</h3>
-                  <p className="text-sm text-muted-foreground">NCM na lista negativa do Edital 060/2025: recolhimento integral do ICMS.</p>
+                  <p className="text-sm text-muted-foreground">
+                    NCM na lista negativa do Edital 060/2025: recolhimento integral do ICMS. Se a mercadoria não for o
+                    produto impedido pela lista, traga a adição de volta para a guia.
+                  </p>
                 </div>
                 {tributadas.map((ad, i) => (
                   <article key={`${ad.adicao}-${i}`} className="rounded-xl border border-amber-200/70 bg-amber-50/30 p-4">
-                    <h4 className="mb-3 font-semibold text-brand-navy">
-                      Adição {ad.adicao} <span className="font-normal text-muted-foreground">· NCM {ad.ncm}</span>
-                    </h4>
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="font-semibold text-brand-navy">
+                        Adição {ad.adicao} <span className="font-normal text-muted-foreground">· NCM {ad.ncm}</span>
+                      </h4>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="bg-card"
+                        title="A mercadoria não é o produto impedido pela lista: a adição volta para a guia, com ICMS diferido"
+                        onClick={() => exonerarAdicao(i)}
+                      >
+                        <ShieldCheck /> Incluir na guia (exonerar)
+                      </Button>
+                    </div>
                     <div className="mb-4">
                       <ValoresAdicao
                         id={`trib-${i}-valores`}

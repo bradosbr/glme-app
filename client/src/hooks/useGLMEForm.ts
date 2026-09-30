@@ -35,6 +35,11 @@ export interface ProdutoAdicao {
   valorAduaneiro?: string;
   itens?: ItemAdicao[];
   valores?: ValoresAdicaoForm;
+  /**
+   * A NCM está na lista negativa, mas o usuário confirmou que a mercadoria não é o
+   * produto impedido: a adição fica na guia, com ICMS diferido.
+   */
+  exoneradaManual?: boolean;
 }
 
 /**
@@ -50,6 +55,15 @@ export interface AdicaoTributada {
   /** @deprecated Calculado agora por calculoICMS a partir de `valores`. */
   valorICMS?: number;
 }
+
+/** Ordena adições pelo número; as sem número ficam no fim. */
+const porNumeroDaAdicao = (a: { adicao: string }, b: { adicao: string }) => {
+  const numero = (v: string) => {
+    const n = parseInt(String(v ?? "").replace(/\D/g, ""), 10);
+    return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+  };
+  return numero(a.adicao) - numero(b.adicao);
+};
 
 export interface FormData {
   // Seção 1 - Secretaria da Fazenda
@@ -288,6 +302,59 @@ export function useGLMEForm() {
     }));
   }, []);
 
+  /**
+   * Traz uma adição de tributação normal para a guia: a NCM consta na lista negativa,
+   * mas a mercadoria não é o produto impedido, então a exoneração continua valendo.
+   * Os valores vão junto e passam a compor a base do diferimento.
+   */
+  const exonerarAdicao = useCallback((index: number) => {
+    setFormData((prev) => {
+      const tributada = (prev.adicoesTributadas ?? [])[index];
+      if (!tributada) return prev;
+      const produto: ProdutoAdicao = {
+        adicao: tributada.adicao,
+        classeTarifaria: tributada.ncm,
+        ncm: tributada.ncm,
+        tratamento: "3", // 3 - Diferimento
+        fundamentoLegal: "",
+        valor: "",
+        descricao: tributada.descricao,
+        valorAduaneiro: tributada.valores?.valorAduaneiro,
+        itens: tributada.itens,
+        valores: tributada.valores,
+        exoneradaManual: true,
+      };
+      // Uma adição em branco (linha nova, ainda sem NCM) dá lugar à que está voltando
+      const produtos = prev.produtos.filter((p) => p.adicao || p.classeTarifaria || p.ncm);
+      return {
+        ...prev,
+        produtos: [...produtos, produto].sort(porNumeroDaAdicao),
+        adicoesTributadas: (prev.adicoesTributadas ?? []).filter((_, i) => i !== index),
+      };
+    });
+  }, []);
+
+  /** Desfaz a exoneração: a adição volta para a tributação normal, fora da guia. */
+  const tributarAdicao = useCallback((index: number) => {
+    setFormData((prev) => {
+      const produto = prev.produtos[index];
+      if (!produto) return prev;
+      const tributada: AdicaoTributada = {
+        adicao: produto.adicao,
+        ncm: produto.classeTarifaria || produto.ncm,
+        descricao: produto.descricao,
+        itens: produto.itens,
+        valores: produto.valores,
+      };
+      const produtos = prev.produtos.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        produtos: produtos.length > 0 ? produtos : initialFormData.produtos,
+        adicoesTributadas: [...(prev.adicoesTributadas ?? []), tributada].sort(porNumeroDaAdicao),
+      };
+    });
+  }, []);
+
   const removeProduto = useCallback((index: number) => {
     setFormData((prev) => ({
       ...prev,
@@ -337,6 +404,8 @@ export function useGLMEForm() {
     updateDocumento,
     updateProduto,
     updateTributada,
+    exonerarAdicao,
+    tributarAdicao,
     updateICMSCalculo,
     addProduto,
     removeProduto,

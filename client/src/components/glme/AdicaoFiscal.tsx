@@ -23,6 +23,8 @@ interface AdicaoFiscalProps {
   naGLME: boolean;
   /** Cálculo da adição, quando há os valores de cada adição. */
   calculo?: AdicaoCalculada;
+  /** NCM na lista negativa, mas o usuário confirmou a exoneração desta adição. */
+  exoneracaoManual?: boolean;
 }
 
 /**
@@ -30,11 +32,13 @@ interface AdicaoFiscalProps {
  * regime (diferimento x tributação normal), alíquota de recolhimento
  * (Anexo I em qualquer nível ou padrão) e os itens da DUIMP que a compõem.
  */
-export function AdicaoFiscal({ ncm, itens, descricao, naGLME, calculo }: AdicaoFiscalProps) {
+export function AdicaoFiscal({ ncm, itens, descricao, naGLME, calculo, exoneracaoManual }: AdicaoFiscalProps) {
   const ncmLimpo = (ncm || "").replace(/\D/g, "");
   const temNCM = ncmLimpo.length >= 4;
   const consulta = consultarAliquotaNCM(ncmLimpo);
   const listaNegativa = temNCM && ncmNaListaNegativa(ncmLimpo);
+  // Exonerada mesmo com a NCM na lista: o regime que vale é o do lugar em que a adição está
+  const exonerada = listaNegativa && exoneracaoManual;
   const listaItens = itens ?? [];
 
   return (
@@ -52,10 +56,12 @@ export function AdicaoFiscal({ ncm, itens, descricao, naGLME, calculo }: AdicaoF
             <span
               className={cn(
                 "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                listaNegativa ? "bg-amber-100 text-amber-900" : "bg-brand-teal-soft text-[#00707d]",
+                listaNegativa && !exonerada ? "bg-amber-100 text-amber-900" : "bg-brand-teal-soft text-[#00707d]",
               )}
             >
-              {listaNegativa ? "Tributação normal · lista negativa" : "Diferimento (PEAP)"}
+              {exonerada ? "Diferimento (PEAP) · exoneração confirmada"
+                : listaNegativa ? "Tributação normal · lista negativa"
+                : "Diferimento (PEAP)"}
             </span>
             <p className="text-muted-foreground">
               {consulta.regra
@@ -87,11 +93,18 @@ export function AdicaoFiscal({ ncm, itens, descricao, naGLME, calculo }: AdicaoF
         </Aviso>
       )}
 
-      {naGLME && listaNegativa && (
+      {naGLME && listaNegativa && !exonerada && (
         <Aviso>
           NCM na lista negativa do Edital 060/2025: tributação normal com recolhimento integral.
           Esta adição não deveria constar na GLME.
         </Aviso>
+      )}
+
+      {exonerada && (
+        <p className="rounded-xl border border-brand-teal/30 bg-brand-teal-soft/50 px-3 py-2 text-sm text-[#00707d]">
+          A NCM consta na lista do Edital 060/2025, mas a mercadoria não é o produto impedido: exoneração
+          confirmada por você. A adição entra na guia e na base do diferimento.
+        </p>
       )}
 
       {listaItens.length > 0 ? (

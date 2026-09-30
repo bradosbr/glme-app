@@ -172,6 +172,11 @@ A migração vai para a produção **antes** do código novo, então a versão a
   sem acento); ao escolher, preenche o código completo e a UF de desembaraço. A API da DUIMP não traz o recinto de
   armazenamento (só `carga.recintoEntrega` em situação especial de despacho); DI e DUIMP casam o código de 7 dígitos
   com o cadastro (`recintoPorCodigo`).
+- **Lista negativa com exoneração confirmada**: a separação é por NCM, mas a lista impede produtos específicos.
+  Cada adição de tributação normal tem o botão "Incluir na guia (exonerar)" (`exonerarAdicao`), que a move para
+  `produtos` com `exoneradaManual: true`; o ICMS passa a ser diferido, o valor entra na base e no campo 5.5, e a
+  linha "NÃO CONSTA NA GLME" some da memória impressa. "Desfazer exoneração" (`tributarAdicao`) faz o caminho de
+  volta. Reimportar a declaração refaz a separação pela NCM e desfaz as escolhas.
 - **UF de recolhimento** acompanha a UF do importador sempre que ela é preenchida (`useGLMEForm`).
 - **Adquirente**: cada importação e o "Limpar" marcam "Mesmo do importador"; só desmarca quando a declaração indica
   conta e ordem ou encomenda (na DUIMP, `caracterizacaoImportacao.ni` do item).
@@ -213,7 +218,7 @@ A migração vai para a produção **antes** do código novo, então a versão a
 - Cadastro de empresas na seção Importador: CNPJ (BrasilAPI / ReceitaWS), inscrição estadual pela SEFAZ da UF,
   edital DBF e chave de acesso do Portal Único
 - Login local (usuário/senha, scrypt) e administração de usuários
-- 148 testes automatizados (vitest)
+- 151 testes automatizados (vitest)
 
 ## Comandos
 

@@ -115,3 +115,32 @@ describe("cálculo pelos totais (sem valores por adição)", () => {
     expect(c.memoria).toEqual([]);
   });
 });
+
+describe("adição da lista negativa exonerada pelo usuário", () => {
+  // Mesma adição (NCM da lista negativa) fora e dentro da guia: o que vale é a lista em que ela está
+  const valores = { valorAduaneiro: "1000", ii: "", ipi: "", pis: "", cofins: "" };
+  const foraDaGuia = calcularFormulario(formulario({
+    produtos: [produto("1", "84713012", 1000)],
+    adicoesTributadas: [{ adicao: "2", ncm: "22084000", valores }],
+  }));
+  const naGuia = calcularFormulario(formulario({
+    produtos: [produto("1", "84713012", 1000), { ...produto("2", "22084000", 1000), exoneradaManual: true }],
+  }));
+
+  it("entra no diferimento, com o seu próprio grupo de alíquota", () => {
+    expect(naGuia.diferimento.map((g) => [g.aliquota, g.adicoes])).toEqual([[20.5, ["1"]], [22.5, ["2"]]]);
+    expect(naGuia.totalTributacaoNormal).toBe(0);
+    expect(naGuia.totalDiferido).toBeCloseTo(foraDaGuia.totalDiferido + foraDaGuia.totalTributacaoNormal, 2);
+  });
+
+  it("soma ao valor aduaneiro da guia (campo 5.5)", () => {
+    expect(foraDaGuia.valorAduaneiroGLME).toBe(1000);
+    expect(naGuia.valorAduaneiroGLME).toBe(2000);
+  });
+
+  it("tira da memória de cálculo o aviso de lista negativa", () => {
+    expect(foraDaGuia.memoria.some((l) => l.texto.includes("NÃO CONSTA NA GLME"))).toBe(true);
+    expect(naGuia.memoria.some((l) => l.texto.includes("NÃO CONSTA NA GLME"))).toBe(false);
+    expect(naGuia.memoriaFrente.some((l) => l.texto.includes("TRIBUTAÇÃO NORMAL"))).toBe(false);
+  });
+});
