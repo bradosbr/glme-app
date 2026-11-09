@@ -1,0 +1,1 @@
+ALTER TYPE "public"."recinto_tipo" ADD VALUE 'outro';

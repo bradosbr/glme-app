@@ -35,12 +35,15 @@ server/
   routers.ts                # Endpoints tRPC (CNPJ, importadores, recintos, DI, DUIMP, usuários)
   db.ts                     # Acesso ao banco de dados
   duimpParser.ts            # Parser do texto do extrato DUIMP
+  recintosSiscomex.ts       # Leitor do CSV da tabela oficial Recinto Aduaneiro (Portal Único)
+  data/RecintoAduaneiro.csv # Cópia da tabela oficial usada na última importação
   sefazCadastro.ts          # Webservice CadConsultaCadastro4 (IE e situação cadastral) com certificado A1
   certs/icpBrasil.ts        # Raiz ICP-Brasil v10 (a SEFAZ usa cadeia ICP-Brasil, fora do repositório do Node)
   cripto.ts                 # AES-256-GCM para segredos no banco (CHAVE_CRIPTOGRAFIA)
   chavePortal.ts            # Decifra a chave de acesso do Portal Único da empresa, só no servidor
   scripts/seedAdmin.ts      # pnpm db:seed — cria o admin inicial
   scripts/configurarCertificado.ts  # pnpm certificado:configurar — grava o e-CNPJ A1 no .env (senha sem eco)
+  scripts/importarRecintos.ts  # pnpm recintos:importar — atualiza os recintos pela tabela do Siscomex
   scripts/migrarMysqlParaPostgres.ts  # pnpm db:migrar-dados — migração única MySQL -> Postgres
 shared/                     # Tipos e constantes compartilhados
   sefazUF.ts                # Por UF: webservice de consulta cadastral (15 UFs) e link de consulta (27)
@@ -49,6 +52,7 @@ drizzle/
   0000_*.sql, 0001_*.sql    # Migrações Postgres (baseline + unaccent/RLS)
   0002_*.sql                # Vínculo usuário ↔ empresas (e chave por usuário, trocada na 0003/0004)
   0003_*.sql, 0004_*.sql    # Chave de acesso do Portal Único passa a ser por empresa (com RLS)
+  0005_*.sql                # Tipo de recinto "outro" (tabela oficial do Siscomex)
 vercel.json                 # Build, estáticos, região, maxDuration e fallback do SPA
 ```
 
@@ -168,10 +172,17 @@ A migração vai para a produção **antes** do código novo, então a versão a
   menos de 60 s dá PLAT-ER2033) e busca versão vigente, dados gerais e itens (100 por página). As adições seguem o
   bloco oficial `adicoes` da DUIMP; tributos pelo valor a recolher (como na DI). `PORTAL_UNICO_AMBIENTE=validacao`
   aponta para o ambiente de testes da Receita.
-- **Recinto alfandegado**: o campo busca no cadastro de recintos enquanto se digita (nome, cidade, UF, tipo ou código,
-  sem acento); ao escolher, preenche o código completo e a UF de desembaraço. A API da DUIMP não traz o recinto de
-  armazenamento (só `carga.recintoEntrega` em situação especial de despacho); DI e DUIMP casam o código de 7 dígitos
-  com o cadastro (`recintoPorCodigo`).
+- **Recinto alfandegado**: o cadastro é a tabela oficial "Recinto Aduaneiro" do Portal Único (900 recintos),
+  importada por `pnpm recintos:importar [arquivo.csv]` (`server/recintosSiscomex.ts` lê o CSV; `--simular` só mostra).
+  O código fica no formato D.DD.DD.DD, sem dígito verificador — a tabela oficial não o traz e ele não é dedutível.
+  Ficam de fora os códigos fictícios, repetidos em centenas de linhas (8888888 estabelecimento exportador,
+  2222222 entrada/saída ficta, 5555555 ponto virtual de fronteira) e os de vigência encerrada. O tipo vem dos
+  dígitos 4-5 do código (11/12 aeroporto, 13/21 porto, 31/32 porto seco) ou da descrição; o que não se encaixa
+  fica como `outro` (migração 0005). Cidade e UF saem do fim da descrição ("IPOJUCA/PE"), quando houver.
+  O campo busca no cadastro enquanto se digita (nome, cidade, UF, tipo ou código, sem acento); ao escolher,
+  preenche o código completo e a UF de desembaraço. A API da DUIMP não traz o recinto de armazenamento
+  (só `carga.recintoEntrega` em situação especial de despacho); DI e DUIMP casam o código de 7 dígitos com o
+  cadastro (`recintoPorCodigo`).
 - **Lista negativa com exoneração confirmada**: a separação é por NCM, mas a lista impede produtos específicos.
   Cada adição de tributação normal tem o botão "Incluir na guia (exonerar)" (`exonerarAdicao`), que a move para
   `produtos` com `exoneradaManual: true`; o ICMS passa a ser diferido, o valor entra na base e no campo 5.5, e a
@@ -218,7 +229,7 @@ A migração vai para a produção **antes** do código novo, então a versão a
 - Cadastro de empresas na seção Importador: CNPJ (BrasilAPI / ReceitaWS), inscrição estadual pela SEFAZ da UF,
   edital DBF e chave de acesso do Portal Único
 - Login local (usuário/senha, scrypt) e administração de usuários
-- 151 testes automatizados (vitest)
+- 158 testes automatizados (vitest)
 
 ## Comandos
 

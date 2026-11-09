@@ -2,7 +2,9 @@ import { boolean, index, integer, pgEnum, pgTable, text, timestamp, uniqueIndex,
 
 // Enums do Postgres são tipos globais: nomes específicos para não colidir
 export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
-export const recintoTipoEnum = pgEnum("recinto_tipo", ["porto", "porto_seco", "aeroporto", "fronteira"]);
+// "outro": recintos da tabela do Siscomex que não são porto, aeroporto, porto seco nem fronteira
+// (estação ferroviária, unidade da Receita, loja franca, instalação industrial...)
+export const recintoTipoEnum = pgEnum("recinto_tipo", ["porto", "porto_seco", "aeroporto", "fronteira", "outro"]);
 
 // timestamptz: guarda o instante absoluto (o MySQL convertia pelo fuso da sessão)
 const carimbo = (nome: string) => timestamp(nome, { withTimezone: true, mode: "date" });
