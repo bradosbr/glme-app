@@ -28,16 +28,27 @@ const UFS = new Set([
 ]);
 
 /**
- * Dígitos 4 e 5 do código: conferidos contra o cadastro antigo, que trazia o tipo
- * preenchido à mão (11 aeroporto, 13 e 21 porto, 31 e 32 porto seco).
+ * Dígitos 4 e 5 do código dizem o tipo de recinto. A correspondência foi tirada da
+ * própria tabela oficial, pelas descrições de cada grupo (o cadastro antigo não serve
+ * de referência: metade dos códigos dele não existe no Siscomex).
+ *
+ * Os grupos que não entram aqui ficam como "outro": 21 remessa expressa, 27 REDEX,
+ * 33 estação ferroviária, 35 base militar, 52/98/99 unidades da Receita, 61/77 loja
+ * franca, 71 DEA e 72 DAF.
  */
 const TIPO_POR_DIGITOS: Record<string, RecintoSiscomex["tipo"]> = {
-  "11": "aeroporto",
-  "12": "aeroporto",
-  "13": "porto",
-  "21": "porto",
+  "11": "aeroporto", // aeroporto alfandegado
+  "12": "aeroporto", // terminal de cargas (TECA)
+  "13": "porto",     // instalação portuária marítima de uso público
+  "14": "porto",     // instalação portuária marítima de uso privativo
+  "15": "porto",     // porto fluvial
+  "16": "porto",     // instalação portuária fluvial
+  "17": "porto",     // porto lacustre
+  "19": "fronteira", // ponto de fronteira alfandegado
+  "22": "porto",     // instalação portuária (granéis, silos e tanques)
+  "30": "porto_seco", // CLIA
   "31": "porto_seco",
-  "32": "porto_seco",
+  "32": "porto_seco", // porto seco / EADI
 };
 
 const semAcento = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();

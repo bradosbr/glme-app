@@ -15,6 +15,8 @@ const CSV = [
   "2222222,ENTRADA E SAIDA FICTA,01/01/2018,-",
   "5555555,PONTO VIRTUAL DE FRONTEIRA - PACARAIMA,23/10/2017,-",
   "9919901,RECINTO ENCERRADO,01/01/2018,31/12/2020",
+  "321901,QUARAI/RS - PONTO DE FRONTEIRA (BRASIL/URUGUAI),01/01/2018,-",
+  "7922101,TERMINAL DE REMESSA EXPRESSA-DHL W. EXPRESS BRASIL,01/01/2018,-",
 ].join("\n");
 
 const recintos = parsearRecintosSiscomex(CSV, new Date(2026, 10, 6));
@@ -22,7 +24,9 @@ const porCodigo = (codigo: string) => recintos.find((r) => r.codigo === codigo);
 
 describe("tabela de recintos do Siscomex", () => {
   it("formata o código em 7 dígitos, repondo o zero à esquerda", () => {
-    expect(recintos.map((r) => r.codigo)).toEqual(["0.15.52.01", "0.45.33.01", "0.91.11.01", "1.30.32.01", "4.93.13.01"]);
+    expect(recintos.map((r) => r.codigo)).toEqual([
+      "0.15.52.01", "0.32.19.01", "0.45.33.01", "0.91.11.01", "1.30.32.01", "4.93.13.01", "7.92.21.01",
+    ]);
   });
 
   it("deixa de fora os códigos fictícios e os recintos com vigência encerrada", () => {
@@ -34,11 +38,13 @@ describe("tabela de recintos do Siscomex", () => {
     expect(porCodigo("0.91.11.01")?.tipo).toBe("aeroporto");
     expect(porCodigo("4.93.13.01")?.tipo).toBe("porto");
     expect(porCodigo("1.30.32.01")?.tipo).toBe("porto_seco");
+    expect(porCodigo("0.32.19.01")?.tipo).toBe("fronteira");
   });
 
   it("usa a descrição quando o código não diz o tipo", () => {
     expect(porCodigo("0.45.33.01")?.tipo).toBe("outro"); // estação ferroviária
     expect(porCodigo("0.15.52.01")?.tipo).toBe("outro"); // unidade da Receita (DRF)
+    expect(porCodigo("7.92.21.01")?.tipo).toBe("outro"); // terminal de remessa expressa
   });
 
   it("lê cidade e UF do fim da descrição", () => {
