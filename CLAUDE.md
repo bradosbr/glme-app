@@ -243,3 +243,5 @@ pnpm db:seed          # Criar admin inicial (exige ADMIN_PASSWORD)
 pnpm db:migrar-dados  # Migração única MySQL -> Postgres (MYSQL_URL + DIRECT_URL)
 pnpm certificado:configurar "C:\caminho\cert.pfx"  # Confere o A1 (titular/validade) e grava no .env
 ```
+- 09/11/2026: cadastro de recintos trocado na produção pela tabela oficial do Siscomex (52 → 900), com
+  `recintos_backup_20261109` guardando a lista antiga e a migração 0005 (tipo "outro") aplicada por SQL.

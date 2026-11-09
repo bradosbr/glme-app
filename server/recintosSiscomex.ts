@@ -59,7 +59,8 @@ function tipoPelaDescricao(nome: string): RecintoSiscomex["tipo"] {
   if (/PORTO SECO|EADI|ESTACAO ADUANEIRA|CLIA\b/.test(t)) return "porto_seco";
   if (/AEROPORTO|TECA|AEREO|\bAER\.|\bAER\b/.test(t)) return "aeroporto";
   if (/FRONTEIRA|PONTE INTERNACIONAL/.test(t)) return "fronteira";
-  if (/PORTO|PORT\.|MARIT|\bMAR\.|FLUVIAL|FLUV\.|LACUSTRE|TERMINAL MARIT/.test(t)) return "porto";
+  // "PORTO" sozinho costuma ser nome de cidade (DRF-PORTO VELHO): exige o termo portuário
+  if (/INST\.?\s?PORT|PORTO (DE|MAR|FLUV|LAC|ORG)|PORT\.|MARIT|FLUVIAL|FLUV\.|LACUSTRE|TERMINAL (MARIT|PORTU|AQUAV)|\bTUP\b|\bCAIS\b/.test(t)) return "porto";
   return "outro";
 }
 
@@ -95,12 +96,25 @@ function limparNome(bruto: string): string {
     .trim();
 }
 
-/** Cidade e UF, quando a descrição termina em "CIDADE/UF" (ex.: "IPOJUCA/PE"). */
+/** Palavras que denunciam um pedaço da descrição, não um nome de cidade. */
+const NAO_E_CIDADE = /AEROPORTO|TERMINAL|FRONTEIRA|ZONA|BASE|INST|ALFANDEG|LOJA|\bDEP\b|TANQUE|USO |S\/A|LTDA/;
+
+/**
+ * Cidade e UF, quando a descrição termina em "CIDADE/UF" (ex.: "IPOJUCA/PE").
+ * A cidade só vale se parecer um nome de cidade: até três palavras, sem começar por
+ * preposição e sem termos da descrição — senão fica só a UF.
+ */
 function localidade(nome: string): { cidade: string | null; uf: string | null } {
   const comBarra = nome.match(/([^\-/.,]{2,40})\/([A-Z]{2})\.?$/);
   if (comBarra && UFS.has(comBarra[2])) {
     const cidade = comBarra[1].trim();
-    return { cidade: /\d/.test(cidade) ? null : cidade, uf: comBarra[2] };
+    const palavras = cidade.split(/\s+/);
+    const parece = palavras.length <= 3
+      && cidade.length >= 3
+      && !/\d/.test(cidade)
+      && !/^(DE|DO|DA|DOS|DAS|E)\s/.test(cidade)
+      && !NAO_E_CIDADE.test(semAcento(cidade));
+    return { cidade: parece ? cidade : null, uf: comBarra[2] };
   }
   const soUF = nome.match(/[\-/\s]([A-Z]{2})\.?$/);
   if (soUF && UFS.has(soUF[1])) return { cidade: null, uf: soUF[1] };
