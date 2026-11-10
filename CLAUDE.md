@@ -4,20 +4,25 @@ Formulário web para geração de **GLME (Guia de Liberação de Mercadoria Estr
 - **DI (Declaração de Importação)** via XML exportado do SISCOMEX
 - **DUIMP** via upload de PDF ou API do Portal Único (autenticação clientId/clientSecret)
 
-Produção: https://glme-app.vercel.app — domínio próprio `glme.brados.app.br` (DNS no Registro.br, apontando para o Vercel via CNAME)
+Produção: https://glme.brados.app.br — VPS Hostinger (`ssh vps`, IP `187.127.44.148`), DNS no Registro.br com registro A
 
 ## Stack
 
 - **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS 4 + shadcn/ui
-- **Backend**: Express + tRPC v11, rodando como função serverless no Vercel
-- **Banco de dados**: Postgres no Supabase, via Drizzle ORM e driver `postgres` (postgres.js)
-- **Hospedagem**: Vercel (frontend no CDN, funções em `gru1` / São Paulo); Supabase em `sa-east-1`
+- **Backend**: Express + tRPC v11, em container Docker no VPS
+- **Banco de dados**: Postgres 17 no VPS (Docker), via Drizzle ORM e driver `postgres` (postgres.js)
+- **Hospedagem**: VPS Hostinger com Docker; Caddy faz o HTTPS automático. Vercel e Supabase só como plano de volta da migração de 10/11/2026
 - **Package manager**: pnpm 10.4.1
 
 ## Estrutura
 
 ```
-api/trpc/
+deploy/vps/
+  Dockerfile, docker-compose.yml  # Imagem e serviço do app no VPS
+  publicar.sh               # Publica uma tag no VPS (roda no PC; --ativar coloca no ar, --voltar desfaz)
+  copiar-supabase.sh        # Copia o Supabase para o VPS, recriando o banco e conferindo por md5
+  backup-glme               # Backup de hora em hora, cifrado com age e copiado para o Google Drive
+api/trpc/                   # Só para o Vercel (legado): sai junto com o projeto no Vercel
   [trpc].js                 # Função serverless: toda a API tRPC (/api/trpc/*)
   duimp.consultarAPI.js     # Mesma API, função separada com maxDuration 60s (Portal Único)
   sefaz.consultarCadastro.js # Mesma API, função separada com maxDuration 30s (SEFAZ-PE)
@@ -30,8 +35,8 @@ client/src/
   lib/extrairTextoPDF.ts    # Extração de texto do PDF da DUIMP no navegador (pdfjs-dist)
   components/               # Componentes UI (shadcn + customizados)
 server/
-  _core/app.ts              # App Express + tRPC, sem listen() — base da função do Vercel
-  _core/index.ts            # Servidor local (pnpm dev / pnpm start), com Vite ou estáticos
+  _core/app.ts              # App Express + tRPC, sem listen()
+  _core/index.ts            # Servidor (pnpm dev com Vite; no VPS, dist/index.js com estáticos)
   routers.ts                # Endpoints tRPC (CNPJ, importadores, recintos, DI, DUIMP, usuários)
   db.ts                     # Acesso ao banco de dados
   duimpParser.ts            # Parser do texto do extrato DUIMP
@@ -53,57 +58,53 @@ drizzle/
   0002_*.sql                # Vínculo usuário ↔ empresas (e chave por usuário, trocada na 0003/0004)
   0003_*.sql, 0004_*.sql    # Chave de acesso do Portal Único passa a ser por empresa (com RLS)
   0005_*.sql                # Tipo de recinto "outro" (tabela oficial do Siscomex)
-vercel.json                 # Build, estáticos, região, maxDuration e fallback do SPA
+vercel.json                 # Só para o Vercel (legado)
 ```
 
 ## Configuração local
 
-1. Instalar Node.js 20+ (o Vercel usa 22.x) e pnpm 10.4.1
+1. Instalar Node.js 20+ (a imagem do VPS usa 22) e pnpm 10.4.1
 2. Copiar `.env.example` para `.env` e preencher as variáveis
 3. `pnpm install`
-4. `pnpm db:push` — aplica migrações pendentes (usa `DIRECT_URL`)
-5. `pnpm db:seed` — só em banco novo, para criar o primeiro admin
-6. `pnpm dev` — servidor em http://localhost:3000
+4. Abrir o túnel até o Postgres do VPS, em um terminal à parte: `ssh -N -L 55432:127.0.0.1:5432 vps`
+5. `pnpm db:push` — aplica migrações pendentes (usa `DIRECT_URL`)
+6. `pnpm db:seed` — só em banco novo, para criar o primeiro admin
+7. `pnpm dev` — servidor em http://localhost:3000
 
-> **Atenção:** se o `.env` apontar para o Supabase de produção, o `pnpm dev` lê e grava nos dados reais.
-> Para desenvolver sem risco, use um projeto Supabase separado.
+> **Atenção:** o `.env` local deve apontar para o `glme_dev`. Apontado para o banco `glme`, o `pnpm dev` lê e grava nos dados reais.
 
 ## Variáveis de ambiente
 
 | Variável | Obrigatória | Descrição |
 |---|---|---|
-| `DATABASE_URL` | Sim | Supabase **transaction pooler** (porta 6543), usuário `postgres.<project-ref>` |
-| `DIRECT_URL` | Para migrações | Conexão direta (IPv6) ou **session pooler** (porta 5432). Usada por `db:push` e `db:migrar-dados` |
+| `DATABASE_URL` | Sim | Postgres do VPS. Local: `postgresql://glme_dev:<senha>@127.0.0.1:55432/glme_dev` (túnel). No VPS: host `postgres`, porta 5432 |
+| `DIRECT_URL` | Para migrações | Igual à `DATABASE_URL`, pelo túnel. Usada por `db:push` e `db:migrar-dados` |
 | `JWT_SECRET` | Sim | Chave para cookies de sessão |
 | `VITE_APP_ID` | Sim | `glme`. Entra no payload da sessão; sem ela nenhum login se sustenta |
-| `PORT` | Não | Porta do servidor local (padrão 3000; ignorada no Vercel) |
+| `PORT` | Não | Porta do servidor (padrão 3000) |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Só no seed | `db:seed` exige `ADMIN_PASSWORD` (mín. 6 caracteres, diferente de `admin123`) |
 | `MYSQL_URL` | Só na migração | Origem MySQL para `db:migrar-dados` (uso único) |
 | `CERTIFICADO_A1_BASE64` | Não | Arquivo .pfx do e-CNPJ A1 em base64 — consulta de IE nas SEFAZ |
 | `CERTIFICADO_A1_SENHA` | Com o certificado | Senha do .pfx |
 | `PORTAL_UNICO_AMBIENTE` | Não | `producao` (padrão) ou `validacao` — ambiente da API da DUIMP |
-| `CHAVE_CRIPTOGRAFIA` | Para salvar chaves | 32 bytes em base64, diferente por ambiente — cifra o Client-Secret do Portal Único |
-
-Na connection string, substitua `[YOUR-PASSWORD]` **inclusive os colchetes** pela senha.
-Senha entre colchetes gera `password authentication failed` no pooler.
+| `CHAVE_CRIPTOGRAFIA` | Para salvar chaves | 32 bytes em base64, diferente por ambiente — cifra o Client-Secret do Portal Único. A de produção fica no `.env` do VPS e precisa ter cópia fora dele |
 
 ## Versões e ambientes
 
-| Ambiente | Branch | Onde roda | Banco (Supabase) |
+| Ambiente | Branch | Onde roda | Banco (Postgres do VPS) |
 |---|---|---|---|
-| **Produção** | `master` | https://glme-app.vercel.app | `GLME` (ref `eokfulfwpywxapexwsbt`) |
-| **Desenvolvimento** | `develop` e `feature/*` | Preview do Vercel (exige login no Vercel) e `pnpm dev` local | `GLME-dev` (ref `uolfnxelzznrwohbxieg`) |
+| **Produção** | `master` | https://glme.brados.app.br | `glme` |
+| **Desenvolvimento** | `develop` e `feature/*` | `pnpm dev` local, com túnel SSH | `glme_dev` |
 
-- **Nunca commite direto na `master`**: todo push nela publica em produção.
-- O `GLME-dev` tem a mesma estrutura da produção, os 52 recintos e só um admin de teste — nenhum dado real.
-- O `.env` local e as variáveis de **Preview** do Vercel devem apontar para o `GLME-dev`.
-- Versões seguem SemVer e são marcadas com tag `vX.Y.Z` na `master` (`v1.0.0` = primeira versão no Vercel).
+- **Nunca commite direto na `master`**: ela guarda o que está publicado.
+- O `glme_dev` tem a mesma estrutura da produção, os recintos e só um admin de teste — nenhum dado real.
+- Versões seguem SemVer e são marcadas com tag `vX.Y.Z` na `master`.
 
 ### Fluxo de trabalho
 
 1. Trabalhe na `develop`. Mudanças grandes: `feature/<nome>` saindo da `develop`, com merge de volta nela.
-2. Acompanhe pelo preview da `develop` ou localmente.
-3. Mudou o schema? `pnpm drizzle-kit generate` e aplique **primeiro no `GLME-dev`** (`pnpm db:push` com `DIRECT_URL` do dev).
+2. Teste localmente, contra o `glme_dev`.
+3. Mudou o schema? `pnpm drizzle-kit generate` e aplique **primeiro no `glme_dev`** (`pnpm db:push` pelo túnel).
 
 ### Migrações compatíveis (produção continua no ar)
 
@@ -116,36 +117,40 @@ A migração vai para a produção **antes** do código novo, então a versão a
 ### Publicar uma versão
 
 1. Na `develop`: atualize `version` no `package.json` (estrutural/incompatível = MAJOR, funcionalidade = MINOR, correção = PATCH), rode `pnpm check` e `pnpm test`.
-2. Aplique as migrações pendentes **na produção** (`pnpm db:push` com `DIRECT_URL` da produção).
-3. Merge `develop` → `master`, tag `vX.Y.Z` e push da `master` e da tag. O Vercel publica sozinho.
-4. Confira https://glme-app.vercel.app (login, recintos, busca de importadores).
+2. Aplique as migrações pendentes **na produção** (`pnpm db:push` pelo túnel, com `DIRECT_URL` do banco `glme`).
+3. Merge `develop` → `master`, tag `vX.Y.Z` e push da `master` e da tag.
+4. Publique: `deploy/vps/publicar.sh vX.Y.Z --ativar`.
+5. Confira https://glme.brados.app.br (login, recintos, busca de importadores).
 
 ### Voltar atrás
 
-- **Código**: Vercel → Deployments → deploy anterior → **Instant Rollback** (segundos). Depois, `git revert` na `master`.
+- **Código**: `deploy/vps/publicar.sh --voltar` volta para a imagem ativa anterior. Depois, `git revert` na `master`.
 - **Banco**: migrações não são desfeitas automaticamente — por isso a regra de compatibilidade acima.
 
-## Deploy (Vercel)
+## Deploy (VPS)
 
-- Push na `master` publica em produção automaticamente (build: `pnpm run build:vercel`).
-- Variáveis de ambiente são **sensíveis** e ficam em **Production**. Alterar uma variável só vale após **Redeploy**.
-- Previews de outras branches ficam atrás do login do Vercel e não têm as variáveis de produção.
+- O app roda no serviço `glme-app` de `/opt/apps/glme`, na rede Docker `web`. O `.env` fica nessa pasta, fora do repositório.
+  Depois de alterar o `.env`, recrie o container (`docker compose up -d --force-recreate glme-app`).
+- O Caddy (`/opt/apps/infra/Caddyfile`) publica o domínio e renova o certificado. É compartilhado com o app `estimativa`:
+  use `caddy reload`, nunca reinicie o container sem necessidade. Só adicione um domínio depois que o DNS apontar para o VPS.
 - `deploy.sh` e `pnpm start` são do deploy **antigo** na VM do Google Cloud com MySQL — obsoletos.
 
-## Banco (Supabase)
+## Banco (VPS)
 
-- Projeto `GLME` (ref `eokfulfwpywxapexwsbt`, região `sa-east-1`).
-- **RLS habilitado sem políticas, de propósito**: bloqueia a Data API pública (chave anônima).
-  O app conecta como `postgres` (dono das tabelas, `bypassrls`), então não é afetado.
-  O advisor do Supabase mostra "RLS Enabled No Policy" (INFO) — é esperado.
+- Postgres 17 em Docker (`/opt/apps/infra`), publicado só em `127.0.0.1:5432`. Bancos `glme` (papel `glme`) e `glme_dev`
+  (papel `glme_dev`), com senhas em `/opt/apps/glme/.db-pass` e `.db-pass-dev`. Acesso externo só por túnel SSH.
+- **RLS habilitado sem políticas**: herança do Supabase, sem efeito sobre o dono das tabelas. O app precisa conectar como
+  dono; com outro papel as consultas voltam vazias e o login mostra "Usuário ou senha inválidos".
 - Extensão `unaccent` no schema `extensions`, usada na busca de importadores.
-- Migrações novas: altere `drizzle/schema.ts` e rode `pnpm db:push` com `DIRECT_URL` apontando para o
-  session pooler (5432). Não use o transaction pooler (6543) para migrações.
-- As duas primeiras migrações foram aplicadas fora do drizzle-kit e registradas manualmente em
-  `drizzle.__drizzle_migrations`; o `db:push` não as reaplica.
-- v1.1.0 (18/09/2026): 0002–0004 aplicadas na produção por SQL e registradas em `drizzle.__drizzle_migrations`
-  com o mesmo hash do arquivo. Cópia de users, importadores e recintos antes da migração no esquema
-  `backup_20260918` (sem acesso público) — pode ser removido quando a versão estiver estável.
+- Migrações novas: altere `drizzle/schema.ts` e rode `pnpm db:push` pelo túnel.
+- Algumas migrações foram aplicadas fora do drizzle-kit e registradas à mão em `drizzle.__drizzle_migrations`, com o mesmo
+  hash do arquivo (0000–0005 estão registradas); o `db:push` não as reaplica.
+- **Backup**: `/usr/local/bin/backup-glme`, de hora em hora (minuto 30), cifrado com age, em `/opt/backups/glme` e na pasta
+  `GLME-backups` do Google Drive. Retenção de 7 dias, 4 semanas e 6 meses. A chave privada **não** fica no VPS; sem ela
+  nenhum backup pode ser restaurado.
+- **Supabase e Vercel** (migração de 10/11/2026): o projeto Supabase `GLME` ficou em somente leitura e o Vercel, intacto, como
+  plano de volta. Para voltar: repor o CNAME `glme` para o Vercel e rodar `ALTER DATABASE postgres RESET
+  default_transaction_read_only` no Supabase; o que foi gravado no VPS precisa ser copiado de volta.
 
 ## Comportamentos que não são óbvios
 
@@ -191,7 +196,7 @@ A migração vai para a produção **antes** do código novo, então a versão a
 - **UF de recolhimento** acompanha a UF do importador sempre que ela é preenchida (`useGLMEForm`).
 - **Adquirente**: cada importação e o "Limpar" marcam "Mesmo do importador"; só desmarca quando a declaração indica
   conta e ordem ou encomenda (na DUIMP, `caracterizacaoImportacao.ni` do item).
-- **Funções dedicadas**: `api/trpc/duimp.consultarAPI.js` (60s) e `api/trpc/sefaz.consultarCadastro.js` (30s)
+- **Funções dedicadas (só no Vercel, legado)**: `api/trpc/duimp.consultarAPI.js` (60s) e `api/trpc/sefaz.consultarCadastro.js` (30s)
   só existem para ter `maxDuration` maior; `server/_core/app.ts` reconstrói o caminho quando o Vercel
   entrega a rota dinâmica reescrita.
 - **Cálculo do ICMS**: `(valor aduaneiro + tributos + despesas aduaneiras) ÷ (1 − alíquota) × alíquota`, com o
@@ -235,7 +240,7 @@ A migração vai para a produção **antes** do código novo, então a versão a
 
 ```bash
 pnpm dev              # Desenvolvimento local (server + vite HMR)
-pnpm build:vercel     # Build usado pelo Vercel (cliente + dist/server/app.js)
+pnpm build            # Build usado na imagem do VPS (cliente + dist/index.js)
 pnpm check            # Typecheck (tsc --noEmit)
 pnpm test             # Testes (vitest)
 pnpm db:push          # Gerar e aplicar migrações (usa DIRECT_URL)

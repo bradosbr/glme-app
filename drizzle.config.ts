@@ -1,7 +1,6 @@
 import { defineConfig } from "drizzle-kit";
 
-// Migrações não devem passar pelo transaction pooler (porta 6543): o Supabase recomenda
-// a conexão direta (IPv6) ou o session pooler (porta 5432, IPv4) para comandos de schema.
+// Migrações usam a conexão direta com o Postgres do VPS, por túnel SSH (ver .env.example).
 // DIRECT_URL é usada se existir; senão, cai para DATABASE_URL.
 const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL;
 if (!connectionString) {

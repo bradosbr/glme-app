@@ -10,7 +10,7 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      // Transaction pooler do Supabase (porta 6543) não suporta prepared statements
+      // Sem prepared statements: mantém o app compatível com um pooler em modo transaction
       const client = postgres(process.env.DATABASE_URL, { prepare: false });
       _db = drizzle(client);
     } catch (error) {

@@ -1,0 +1,2 @@
+# Estes arquivos rodam no Linux do VPS: com CRLF, os scripts não executam.
+* text eol=lf
