@@ -806,7 +806,13 @@ export default function Home() {
         <div ref={acoesRef} className="mx-auto max-w-5xl px-4 pb-3">
           <div className="grid grid-cols-4 gap-2 sm:gap-3">
               <BlocoAcao icone={Upload} titulo="Importar DI / DUIMP" rotuloCurto="Importar" subtitulo="XML da DI ou PDF da DUIMP" variante="principal" carregando={importando} onClick={() => setShowImportar(true)} />
-              <BlocoAcao icone={Contact} titulo="Cadastro de empresas" rotuloCurto="Cadastro" subtitulo="Edital e chave de acesso" onClick={() => abrirCadastro()} />
+              <BlocoAcao
+                icone={Contact}
+                titulo={isAdmin ? "Cadastro de empresas" : "Minhas empresas"}
+                rotuloCurto={isAdmin ? "Cadastro" : "Empresas"}
+                subtitulo={isAdmin ? "Edital e chave de acesso" : "Usar empresa na guia"}
+                onClick={() => abrirCadastro()}
+              />
               <BlocoAcao icone={FileDown} titulo="Gerar guia em PDF" rotuloCurto="Gerar PDF" subtitulo="Formulário oficial" carregando={gerandoPDF} onClick={handleGerarPDF} />
               <BlocoAcao icone={Eraser} titulo="Limpar formulário" rotuloCurto="Limpar" subtitulo="Começar uma nova guia" variante="perigo" onClick={() => setConfirmarLimpeza(true)} />
             </div>
@@ -908,11 +914,17 @@ export default function Home() {
                   </span>
                 </span>
               ) : (
-                <span className="text-muted-foreground">Empresa ainda não cadastrada: cadastre para guardar o edital DBF e a chave de acesso do Portal Único.</span>
+                <span className="text-muted-foreground">
+                  {isAdmin
+                    ? "Empresa ainda não cadastrada: cadastre para guardar o edital DBF e a chave de acesso do Portal Único."
+                    : "Empresa fora das suas: peça ao administrador para cadastrá-la e delegá-la a você."}
+                </span>
               )}
-              <Button size="sm" variant="outline" className="shrink-0" onClick={() => abrirCadastro({ ...formData.importador })}>
-                {cadastroAtual ? <><Pencil /> Abrir cadastro</> : <><Plus /> Cadastrar empresa</>}
-              </Button>
+              {isAdmin && (
+                <Button size="sm" variant="outline" className="shrink-0" onClick={() => abrirCadastro({ ...formData.importador })}>
+                  {cadastroAtual ? <><Pencil /> Abrir cadastro</> : <><Plus /> Cadastrar empresa</>}
+                </Button>
+              )}
             </div>
           )}
         </Secao>
@@ -1270,7 +1282,7 @@ export default function Home() {
       />
 
       {/* ===== Minha conta ===== */}
-      <MinhaContaDialog open={showConta} onOpenChange={setShowConta} importadores={importadoresBD as any[]} />
+      <MinhaContaDialog open={showConta} onOpenChange={setShowConta} />
       <CadastroEmpresasDialog
         open={showCadastro}
         onOpenChange={setShowCadastro}

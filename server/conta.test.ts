@@ -37,6 +37,10 @@ vi.mock("./db", () => ({
   desvincularEmpresa: vi.fn(async (userId: number, importadorId: number) => {
     banco.vinculos.delete(`${userId}:${importadorId}`);
   }),
+  getImportadores: vi.fn(async () => banco.importadores),
+  deleteImportador: vi.fn(async (id: number) => {
+    banco.importadores = banco.importadores.filter((i) => i.id !== id);
+  }),
   listarEmpresasComChave: vi.fn(async (userId: number, admin: boolean) =>
     banco.importadores.filter((i) => banco.chaves.has(i.id) && (admin || banco.vinculos.has(`${userId}:${i.id}`))),
   ),
@@ -77,9 +81,11 @@ afterEach(() => {
   else process.env.CHAVE_CRIPTOGRAFIA = original;
 });
 
+const admin = (id = 9) => appRouter.createCaller(contexto(id, "admin"));
+
 describe("Cadastro da empresa com chave de acesso do Portal Único", () => {
   it("cadastra a empresa com edital e chave; o segredo fica cifrado e não volta", async () => {
-    const api = appRouter.createCaller(contexto(1));
+    const api = admin(1);
     const salvo = await api.importadores.salvar({ ...empresa, chavePortal: chave });
     expect(salvo).toMatchObject({ id: 1, editalDBF: "001/2026" });
 
@@ -94,42 +100,42 @@ describe("Cadastro da empresa com chave de acesso do Portal Único", () => {
   });
 
   it("o servidor recupera a chave decifrada da empresa", async () => {
-    await appRouter.createCaller(contexto(1)).importadores.salvar({ ...empresa, chavePortal: chave });
+    await admin().importadores.salvar({ ...empresa, chavePortal: chave });
     expect(await chavePortalDaEmpresa(1)).toEqual(chave);
     expect(await chavePortalDaEmpresa(99)).toBeUndefined();
   });
 
-  it("quem cria o cadastro fica vinculado; quem só atualiza, não", async () => {
-    await appRouter.createCaller(contexto(1)).importadores.salvar(empresa);
-    await appRouter.createCaller(contexto(2)).importadores.salvar({ ...empresa, editalDBF: "002/2026" });
-    expect(banco.vinculos.has("1:1")).toBe(true);
-    expect(banco.vinculos.has("2:1")).toBe(false);
+  it("cadastrar não vincula ninguém: quem delega é o administrador", async () => {
+    await admin().importadores.salvar(empresa);
+    expect(banco.vinculos.size).toBe(0);
   });
 
-  it("usuário sem vínculo não troca nem remove a chave de outra empresa", async () => {
-    await appRouter.createCaller(contexto(1)).importadores.salvar({ ...empresa, chavePortal: chave });
-    const intruso = appRouter.createCaller(contexto(2));
+  it("usuário comum não cadastra, não exclui e não mexe na chave", async () => {
+    await admin().importadores.salvar({ ...empresa, chavePortal: chave });
+    const comum = appRouter.createCaller(contexto(2));
+    banco.vinculos.add("2:1"); // nem vinculado à empresa ele pode
 
-    await expect(intruso.importadores.salvar({ ...empresa, chavePortal: { clientId: "outro-cliente-000", clientSecret: "outro-segredo-000" } }))
-      .rejects.toThrow("Só o administrador ou um usuário vinculado");
-    await expect(intruso.importadores.removerChavePortal({ importadorId: 1 })).rejects.toThrow("Só o administrador");
-    expect((await intruso.importadores.chavePortal({ importadorId: 1 })).podeAlterar).toBe(false);
+    await expect(comum.importadores.salvar({ ...empresa, editalDBF: "009/2026" })).rejects.toThrow();
+    await expect(comum.importadores.removerChavePortal({ importadorId: 1 })).rejects.toThrow();
+    await expect(comum.importadores.excluir({ id: 1 })).rejects.toThrow();
+    expect((await comum.importadores.chavePortal({ importadorId: 1 })).podeAlterar).toBe(false);
     expect(banco.chaves.get(1)!.clientId).toBe(chave.clientId);
+    expect(banco.importadores[0].editalDBF).toBe("001/2026");
   });
 
-  it("administrador e usuário vinculado podem trocar e remover a chave", async () => {
-    await appRouter.createCaller(contexto(1)).importadores.salvar({ ...empresa, chavePortal: chave });
-    const admin = appRouter.createCaller(contexto(9, "admin"));
-    await admin.importadores.salvar({ ...empresa, chavePortal: { clientId: "cliente-admin-0001", clientSecret: "segredo-admin-0001" } });
+  it("administrador troca e remove a chave", async () => {
+    await admin().importadores.salvar({ ...empresa, chavePortal: chave });
+    await admin().importadores.salvar({ ...empresa, chavePortal: { clientId: "cliente-admin-0001", clientSecret: "segredo-admin-0001" } });
     expect(banco.chaves.get(1)!.clientId).toBe("cliente-admin-0001");
+    expect((await admin().importadores.chavePortal({ importadorId: 1 })).podeAlterar).toBe(true);
 
-    await appRouter.createCaller(contexto(1)).importadores.removerChavePortal({ importadorId: 1 });
+    await admin().importadores.removerChavePortal({ importadorId: 1 });
     expect(banco.chaves.has(1)).toBe(false);
   });
 
   it("sem chave de criptografia no servidor, não grava nada", async () => {
     delete process.env.CHAVE_CRIPTOGRAFIA;
-    const api = appRouter.createCaller(contexto(1));
+    const api = admin();
     await expect(api.importadores.salvar({ ...empresa, chavePortal: chave })).rejects.toThrow("CHAVE_CRIPTOGRAFIA");
     expect(banco.importadores).toHaveLength(0);
     // Sem chave informada, o cadastro funciona normalmente
@@ -138,25 +144,39 @@ describe("Cadastro da empresa com chave de acesso do Portal Único", () => {
   });
 
   it("recusa Client-Id ou Client-Secret curtos demais", async () => {
-    await expect(appRouter.createCaller(contexto(1)).importadores.salvar({ ...empresa, chavePortal: { clientId: "abc", clientSecret: "x" } }))
+    await expect(admin().importadores.salvar({ ...empresa, chavePortal: { clientId: "abc", clientSecret: "x" } }))
       .rejects.toThrow();
   });
 });
 
-describe("Minha conta - empresas do usuário", () => {
-  it("vincula e desvincula empresas só do usuário logado", async () => {
+describe("Delegação de empresas (só administrador)", () => {
+  beforeEach(() => {
     banco.importadores.push({ id: 10, cnpj: "10", razaoSocial: "ALFA" }, { id: 20, cnpj: "20", razaoSocial: "BETA" });
-    const u1 = appRouter.createCaller(contexto(1));
-    const u2 = appRouter.createCaller(contexto(2));
-    await u1.conta.vincularEmpresa({ importadorId: 10 });
-    await u2.conta.vincularEmpresa({ importadorId: 20 });
+  });
 
-    expect((await u1.conta.empresas()).map((e) => e.id)).toEqual([10]);
-    expect((await u2.conta.empresas()).map((e) => e.id)).toEqual([20]);
+  it("o administrador delega e tira empresas de cada usuário", async () => {
+    await admin().usuarios.vincularEmpresa({ userId: 1, importadorId: 10 });
+    await admin().usuarios.vincularEmpresa({ userId: 2, importadorId: 20 });
 
-    await u1.conta.desvincularEmpresa({ importadorId: 10 });
-    expect(await u1.conta.empresas()).toEqual([]);
-    expect((await u2.conta.empresas()).map((e) => e.id)).toEqual([20]);
+    expect((await admin().usuarios.empresas({ userId: 1 })).map((e) => e.id)).toEqual([10]);
+    expect((await appRouter.createCaller(contexto(1)).conta.empresas()).map((e) => e.id)).toEqual([10]);
+    expect((await appRouter.createCaller(contexto(2)).conta.empresas()).map((e) => e.id)).toEqual([20]);
+
+    await admin().usuarios.desvincularEmpresa({ userId: 1, importadorId: 10 });
+    expect(await appRouter.createCaller(contexto(1)).conta.empresas()).toEqual([]);
+  });
+
+  it("usuário comum não delega empresas para ninguém", async () => {
+    const comum = appRouter.createCaller(contexto(1));
+    await expect(comum.usuarios.vincularEmpresa({ userId: 1, importadorId: 10 })).rejects.toThrow();
+    await expect(comum.usuarios.empresas({ userId: 1 })).rejects.toThrow();
+    expect(banco.vinculos.size).toBe(0);
+  });
+
+  it("o usuário comum só enxerga no cadastro as empresas delegadas a ele", async () => {
+    await admin().usuarios.vincularEmpresa({ userId: 1, importadorId: 10 });
+    expect((await appRouter.createCaller(contexto(1)).importadores.listar()).map((e) => e.id)).toEqual([10]);
+    expect((await admin().importadores.listar()).map((e) => e.id)).toEqual([10, 20]);
   });
 
   it("exige login", async () => {
@@ -170,14 +190,15 @@ describe("Consulta da DUIMP pela API com a chave da empresa", () => {
   const consulta = { numeroDuimp: "26BR0000000001-1", importadorId: 1 };
 
   it("usuário vinculado consulta com a chave decifrada da empresa", async () => {
-    await appRouter.createCaller(contexto(1)).importadores.salvar({ ...empresa, chavePortal: chave });
+    await admin().importadores.salvar({ ...empresa, chavePortal: chave });
+    await admin().usuarios.vincularEmpresa({ userId: 1, importadorId: 1 });
     const r = await appRouter.createCaller(contexto(1)).duimp.consultarAPI(consulta);
     expect(r.sucesso).toBe(true);
     expect(consultarDuimp).toHaveBeenLastCalledWith(chave, "26BR0000000001-1", undefined);
   });
 
   it("quem não é vinculado não usa a chave da empresa", async () => {
-    await appRouter.createCaller(contexto(1)).importadores.salvar({ ...empresa, chavePortal: chave });
+    await admin().importadores.salvar({ ...empresa, chavePortal: chave });
     consultarDuimp.mockClear();
     const r = await appRouter.createCaller(contexto(2)).duimp.consultarAPI(consulta);
     expect(r).toMatchObject({ sucesso: false, erro: expect.stringContaining("não está vinculado") });
@@ -185,15 +206,17 @@ describe("Consulta da DUIMP pela API com a chave da empresa", () => {
   });
 
   it("empresa sem chave cadastrada", async () => {
-    await appRouter.createCaller(contexto(1)).importadores.salvar(empresa);
+    await admin().importadores.salvar(empresa);
+    await admin().usuarios.vincularEmpresa({ userId: 1, importadorId: 1 });
     const r = await appRouter.createCaller(contexto(1)).duimp.consultarAPI(consulta);
     expect(r).toMatchObject({ sucesso: false, erro: expect.stringContaining("não tem chave de acesso") });
   });
 
   it("lista só as empresas com chave que o usuário pode usar", async () => {
-    await appRouter.createCaller(contexto(1)).importadores.salvar({ ...empresa, chavePortal: chave });
+    await admin().importadores.salvar({ ...empresa, chavePortal: chave });
+    await admin().usuarios.vincularEmpresa({ userId: 1, importadorId: 1 });
     expect((await appRouter.createCaller(contexto(1)).importadores.comChavePortal()).map((e) => e.id)).toEqual([1]);
     expect(await appRouter.createCaller(contexto(2)).importadores.comChavePortal()).toEqual([]);
-    expect((await appRouter.createCaller(contexto(9, "admin")).importadores.comChavePortal()).map((e) => e.id)).toEqual([1]);
+    expect((await admin().importadores.comChavePortal()).map((e) => e.id)).toEqual([1]);
   });
 });

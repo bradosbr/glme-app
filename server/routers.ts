@@ -430,16 +430,6 @@ function parseDIXML(xmlContent: string): Promise<Record<string, unknown>> {
  * Trocar ou remover a chave de acesso de uma empresa: administrador, usuário vinculado
  * à empresa ou, se a empresa ainda não tem chave, quem está cadastrando.
  */
-async function exigirPermissaoChave(usuario: { id: number; role: string }, importadorId: number) {
-  if (usuario.role === "admin") return;
-  if (!(await getChavePortalEmpresa(importadorId))) return;
-  if (await usuarioVinculadoAEmpresa(usuario.id, importadorId)) return;
-  throw new TRPCError({
-    code: "FORBIDDEN",
-    message: "Só o administrador ou um usuário vinculado à empresa pode alterar a chave de acesso dela.",
-  });
-}
-
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -533,6 +523,7 @@ export const appRouter = router({
     atualizar: adminProcedure
       .input(z.object({
         id: z.number().int().positive(),
+        username: z.string().trim().min(3, "Login deve ter ao menos 3 caracteres").max(64).optional(),
         name: z.string().optional(),
         email: z.string().email("E-mail inválido").optional().or(z.literal("")),
         role: z.enum(["user", "admin"]).optional(),
@@ -543,12 +534,36 @@ export const appRouter = router({
         if (input.id === ctx.user.id && (input.active === false || input.role === "user")) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Você não pode rebaixar ou desativar a própria conta." });
         }
-        await updateUserFields(input.id, {
-          name: input.name,
-          email: input.email === "" ? null : input.email,
-          role: input.role,
-          active: input.active,
-        });
+        try {
+          await updateUserFields(input.id, {
+            username: input.username,
+            name: input.name,
+            email: input.email === "" ? null : input.email,
+            role: input.role,
+            active: input.active,
+          });
+        } catch (e) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: e instanceof Error ? e.message : "Erro ao atualizar usuário" });
+        }
+        return { success: true } as const;
+      }),
+
+    /** Empresas delegadas ao usuário: quem decide é o administrador. */
+    empresas: adminProcedure
+      .input(z.object({ userId: z.number().int().positive() }))
+      .query(({ input }) => listarEmpresasDoUsuario(input.userId)),
+
+    vincularEmpresa: adminProcedure
+      .input(z.object({ userId: z.number().int().positive(), importadorId: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        await vincularEmpresa(input.userId, input.importadorId);
+        return { success: true } as const;
+      }),
+
+    desvincularEmpresa: adminProcedure
+      .input(z.object({ userId: z.number().int().positive(), importadorId: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        await desvincularEmpresa(input.userId, input.importadorId);
         return { success: true } as const;
       }),
 
@@ -593,39 +608,30 @@ export const appRouter = router({
       }),
   }),
 
-  // ===== MINHA CONTA: empresas do usuário logado =====
-  // Todas as operações usam ctx.user.id: ninguém lê nem altera vínculos de outro usuário.
+  // ===== MINHA CONTA: empresas delegadas ao usuário logado (só leitura) =====
+  // Vincular e desvincular é do administrador (usuarios.vincularEmpresa).
   conta: router({
     empresas: protectedProcedure.query(({ ctx }) => listarEmpresasDoUsuario(ctx.user.id)),
-
-    vincularEmpresa: protectedProcedure
-      .input(z.object({ importadorId: z.number().int().positive() }))
-      .mutation(async ({ input, ctx }) => {
-        await vincularEmpresa(ctx.user.id, input.importadorId);
-        return { success: true } as const;
-      }),
-
-    desvincularEmpresa: protectedProcedure
-      .input(z.object({ importadorId: z.number().int().positive() }))
-      .mutation(async ({ input, ctx }) => {
-        await desvincularEmpresa(ctx.user.id, input.importadorId);
-        return { success: true } as const;
-      }),
   }),
 
   // ===== IMPORTADORES =====
   importadores: router({
-    listar: protectedProcedure.query(async () => {
-      return await getImportadores();
+    /** Admin vê todo o cadastro; os demais, só as empresas delegadas a eles. */
+    listar: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role === "admin") return await getImportadores();
+      return await listarEmpresasDoUsuario(ctx.user.id);
     }),
 
     buscar: protectedProcedure
       .input(z.object({ query: z.string() }))
-      .query(async ({ input }) => {
-        return await searchImportadores(input.query);
+      .query(async ({ input, ctx }) => {
+        const achados = await searchImportadores(input.query);
+        if (ctx.user.role === "admin") return achados;
+        const minhas = new Set((await listarEmpresasDoUsuario(ctx.user.id)).map((e) => e.id));
+        return achados.filter((i) => minhas.has(i.id));
       }),
 
-    salvar: protectedProcedure
+    salvar: adminProcedure
       .input(z.object({
         cnpj: z.string(),
         /** Chave de acesso do Portal Único da empresa (opcional; só é gravada se informada). */
@@ -654,13 +660,8 @@ export const appRouter = router({
             message: "O servidor não tem a chave de criptografia configurada (CHAVE_CRIPTOGRAFIA). Nada foi salvo.",
           });
         }
-        const existente = await getImportadorByCnpj(dados.cnpj);
-        if (chavePortal && existente) await exigirPermissaoChave(ctx.user, existente.id);
-
         const salvo = await upsertImportador(dados);
         const id = salvo && "id" in salvo && typeof salvo.id === "number" ? salvo.id : undefined;
-        // Quem cria o cadastro passa a tê-lo em "minhas empresas" (pode desvincular depois)
-        if (id !== undefined && !existente) await vincularEmpresa(ctx.user.id, id);
         if (id !== undefined && chavePortal) {
           await salvarChavePortalEmpresa(id, chavePortal.clientId, cifrar(chavePortal.clientSecret), ctx.user.id);
         }
@@ -672,13 +673,11 @@ export const appRouter = router({
       .input(z.object({ importadorId: z.number().int().positive() }))
       .query(async ({ input, ctx }) => {
         const chave = await getChavePortalEmpresa(input.importadorId);
-        const podeAlterar = ctx.user.role === "admin" || !chave
-          || await usuarioVinculadoAEmpresa(ctx.user.id, input.importadorId);
         return {
+          podeAlterar: ctx.user.role === "admin",
           configurada: Boolean(chave),
           clientId: chave ? mascarar(chave.clientId) : null,
           atualizadaEm: chave?.updatedAt ?? null,
-          podeAlterar,
           criptografiaDisponivel: criptografiaDisponivel(),
         };
       }),
@@ -687,21 +686,23 @@ export const appRouter = router({
     comChavePortal: protectedProcedure.query(({ ctx }) =>
       listarEmpresasComChave(ctx.user.id, ctx.user.role === "admin")),
 
-    removerChavePortal: protectedProcedure
+    removerChavePortal: adminProcedure
       .input(z.object({ importadorId: z.number().int().positive() }))
-      .mutation(async ({ input, ctx }) => {
-        await exigirPermissaoChave(ctx.user, input.importadorId);
+      .mutation(async ({ input }) => {
         await removerChavePortalEmpresa(input.importadorId);
         return { success: true } as const;
       }),
 
+    /** Dados da empresa pelo CNPJ da declaração; fora do admin, só as delegadas ao usuário. */
     buscarPorCNPJ: protectedProcedure
       .input(z.object({ cnpj: z.string() }))
-      .query(async ({ input }) => {
-        return await getImportadorByCnpj(input.cnpj);
+      .query(async ({ input, ctx }) => {
+        const empresa = await getImportadorByCnpj(input.cnpj);
+        if (!empresa || ctx.user.role === "admin") return empresa;
+        return (await usuarioVinculadoAEmpresa(ctx.user.id, empresa.id)) ? empresa : undefined;
       }),
 
-    excluir: protectedProcedure
+    excluir: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await deleteImportador(input.id);

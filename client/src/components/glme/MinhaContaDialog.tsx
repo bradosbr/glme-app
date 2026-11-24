@@ -1,55 +1,26 @@
-import { useState } from "react";
-import { AlertTriangle, Building2, FileBadge, Loader2, Plus, ShieldCheck, X } from "lucide-react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { AlertTriangle, Building2, FileBadge, Loader2, ShieldCheck } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
-
-interface ImportadorResumo {
-  id: number;
-  razaoSocial: string;
-  cnpj: string;
-  uf?: string | null;
-}
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Cadastro de importadores, para escolher empresas a vincular. */
-  importadores: ImportadorResumo[];
 }
 
-/** Empresas pelas quais o usuário responde ("minhas empresas"). */
-export function MinhaContaDialog({ open, onOpenChange, importadores }: Props) {
-  const utils = trpc.useUtils();
+/** Empresas delegadas ao usuário pelo administrador ("minhas empresas"), só para consulta. */
+export function MinhaContaDialog({ open, onOpenChange }: Props) {
   const empresas = trpc.conta.empresas.useQuery(undefined, { enabled: open });
   // Certificado A1 do servidor para as consultas à SEFAZ: só titular e validade, nunca o arquivo
   const certificado = trpc.sefaz.certificado.useQuery(undefined, { enabled: open });
-  const [empresaEscolhida, setEmpresaEscolhida] = useState("");
-
-  const vincular = trpc.conta.vincularEmpresa.useMutation({
-    onSuccess: () => {
-      setEmpresaEscolhida("");
-      utils.conta.empresas.invalidate();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-  const desvincular = trpc.conta.desvincularEmpresa.useMutation({
-    onSuccess: () => utils.conta.empresas.invalidate(),
-    onError: (e) => toast.error(e.message),
-  });
 
   const vinculadas = empresas.data ?? [];
-  const idsVinculados = new Set(vinculadas.map((e) => e.id));
-  const disponiveis = importadores.filter((i) => !idsVinculados.has(i.id));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="text-brand-navy">Minha conta</DialogTitle>
-          <DialogDescription>Empresas pelas quais você responde e o certificado usado nas consultas à SEFAZ.</DialogDescription>
+          <DialogDescription>Empresas que o administrador delegou a você e o certificado usado nas consultas à SEFAZ.</DialogDescription>
         </DialogHeader>
 
         {/* ===== Minhas empresas ===== */}
@@ -61,53 +32,19 @@ export function MinhaContaDialog({ open, onOpenChange, importadores }: Props) {
             <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Carregando…</p>
           ) : vinculadas.length === 0 ? (
             <p className="rounded-xl bg-secondary/60 px-4 py-3 text-sm text-muted-foreground">
-              Nenhuma empresa vinculada. Ao cadastrar uma empresa na seção Importador, ela entra aqui automaticamente.
+              Nenhuma empresa delegada a você. O administrador cadastra as empresas e escolhe quem responde por cada uma.
             </p>
           ) : (
             <ul className="divide-y rounded-xl border">
               {vinculadas.map((e) => (
-                <li key={e.id} className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{e.razaoSocial}</p>
-                    <p className="tabular-nums text-xs text-muted-foreground">{e.cnpj}{e.uf ? ` · ${e.uf}` : ""}</p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`Desvincular ${e.razaoSocial}`}
-                    title="Desvincular"
-                    className="text-muted-foreground hover:text-destructive"
-                    disabled={desvincular.isPending}
-                    onClick={() => desvincular.mutate({ importadorId: e.id })}
-                  >
-                    <X />
-                  </Button>
+                <li key={e.id} className="px-3 py-2.5 text-sm">
+                  <p className="truncate font-medium">{e.razaoSocial}</p>
+                  <p className="tabular-nums text-xs text-muted-foreground">{e.cnpj}{e.uf ? ` · ${e.uf}` : ""}</p>
                 </li>
               ))}
             </ul>
           )}
 
-          {disponiveis.length > 0 && (
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Select value={empresaEscolhida} onValueChange={setEmpresaEscolhida}>
-                <SelectTrigger className="w-full sm:flex-1">
-                  <SelectValue placeholder="Escolher empresa do cadastro" />
-                </SelectTrigger>
-                <SelectContent>
-                  {disponiveis.map((i) => (
-                    <SelectItem key={i.id} value={String(i.id)}>{i.razaoSocial}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                variant="outline"
-                disabled={!empresaEscolhida || vincular.isPending}
-                onClick={() => vincular.mutate({ importadorId: Number(empresaEscolhida) })}
-              >
-                {vincular.isPending ? <Loader2 className="animate-spin" /> : <Plus />} Vincular
-              </Button>
-            </div>
-          )}
         </section>
 
         {/* ===== Certificado digital (consultas à SEFAZ) ===== */}

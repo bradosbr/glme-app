@@ -158,13 +158,16 @@ A migração vai para a produção **antes** do código novo, então a versão a
   exigem login (`protectedProcedure`); usuários exigem admin.
 - **"Usuário ou senha inválidos"** também aparece quando o app está sem banco (`DATABASE_URL` vazia ou
   malformada). Se aparecer com credenciais corretas, confira a variável antes da senha.
-- **Cadastro de empresas** (botão "Cadastro" na barra de ações, `CadastroEmpresasDialog`): lista com busca, "Usar na
-  guia" e edição com consulta à Receita e à SEFAZ da UF, edital DBF e chave de acesso do Portal Único **da empresa**
-  (Client-Id / Client-Secret). A seção Importador só mostra um resumo (cadastrada, edital, chave disponível) e o botão
-  "Abrir cadastro"; o edital da empresa cadastrada preenche a guia. O Client-Secret é cifrado (AES-256-GCM, tabela
-  separada de importadores) e nunca volta ao navegador; a tela mostra só o fim do Client-Id. Trocar/remover a chave:
-  admin, usuário vinculado à empresa ou, se ainda não há chave, quem está cadastrando. Quem **cria** o cadastro fica
-  vinculado ("Minhas empresas", no cabeçalho).
+- **Cadastro de empresas e delegação (só administrador)**: o admin cadastra a empresa (botão "Cadastro",
+  `CadastroEmpresasDialog`: dados da Receita/SEFAZ, edital DBF e chave de acesso do Portal Único) e escolhe quem
+  responde por ela em Usuários › ícone de prédio (`EmpresasDoUsuarioDialog`, `usuarios.vincularEmpresa`).
+  O usuário comum **só enxerga as empresas delegadas a ele**: `importadores.listar`, `buscar` e `buscarPorCNPJ`
+  filtram pelo vínculo, e a janela de cadastro vira "Minhas empresas", com "Usar na guia" e sem edição.
+  `importadores.salvar`, `excluir` e `removerChavePortal` são `adminProcedure`; `chavePortal.podeAlterar` é o admin.
+  Cadastrar não vincula ninguém automaticamente — a delegação é sempre explícita. "Minha conta" só lista as
+  empresas delegadas. O Client-Secret é cifrado (AES-256-GCM, tabela separada) e nunca volta ao navegador.
+- **Usuários (admin)**: além de criar, redefinir senha, promover e desativar, o admin edita login, nome, e-mail,
+  papel e status (`usuarios.atualizar`; o login continua único e ninguém rebaixa nem desativa a própria conta).
 - **DUIMP pela API** (`server/portalUnico.ts`): a janela de importação pede só número e versão (em branco = vigente);
   a chave é a da empresa (seção Importador, ou escolhida entre as que têm chave), usada só por admin ou usuário
   vinculado. Autentica em `/portal/api/autenticar/chave-acesso` (headers Client-Id, Client-Secret, Role-Type IMPEXP;
@@ -229,7 +232,7 @@ A migração vai para a produção **antes** do código novo, então a versão a
 - Cadastro de empresas na seção Importador: CNPJ (BrasilAPI / ReceitaWS), inscrição estadual pela SEFAZ da UF,
   edital DBF e chave de acesso do Portal Único
 - Login local (usuário/senha, scrypt) e administração de usuários
-- 158 testes automatizados (vitest)
+- 161 testes automatizados (vitest)
 
 ## Comandos
 

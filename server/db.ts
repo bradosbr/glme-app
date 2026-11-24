@@ -120,15 +120,25 @@ export async function setUserPassword(id: number, newPassword: string) {
   await db.update(users).set({ passwordHash, resetRequested: false }).where(eq(users.id, id));
 }
 
-export async function updateUserFields(id: number, fields: { name?: string | null; email?: string | null; role?: "user" | "admin"; active?: boolean }) {
+export async function updateUserFields(
+  id: number,
+  fields: { username?: string; name?: string | null; email?: string | null; role?: "user" | "admin"; active?: boolean },
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const set: Record<string, unknown> = {};
+  if (fields.username !== undefined) set.username = fields.username;
   if (fields.name !== undefined) set.name = fields.name;
   if (fields.email !== undefined) set.email = fields.email;
   if (fields.role !== undefined) set.role = fields.role;
   if (fields.active !== undefined) set.active = fields.active;
   if (Object.keys(set).length === 0) return;
+
+  if (fields.username !== undefined) {
+    // O login é único: avisa antes de o Postgres recusar com a mensagem da constraint
+    const existente = await getUserByUsername(fields.username);
+    if (existente && existente.id !== id) throw new Error(`O login "${fields.username}" já é de outro usuário.`);
+  }
   await db.update(users).set(set).where(eq(users.id, id));
 }
 

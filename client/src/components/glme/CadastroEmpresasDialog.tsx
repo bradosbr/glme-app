@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { CadastroEmpresa, type ChavePortalInformada } from "@/components/glme/CadastroEmpresa";
 import { SituacaoCadastral } from "@/components/glme/SituacaoCadastral";
 import { useConsultaSefaz } from "@/hooks/useConsultaSefaz";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { ESTADOS_BRASIL } from "@/lib/formData";
 import { trpc } from "@/lib/trpc";
 
@@ -80,6 +81,8 @@ interface Props {
  */
 export function CadastroEmpresasDialog({ open, onOpenChange, empresas, abrirCom, onUsar, onSalvo }: Props) {
   const utils = trpc.useUtils();
+  // Cadastrar, editar e excluir empresa é do administrador; os demais só usam as delegadas a eles
+  const { isAdmin } = useAuth();
   const [modo, setModo] = useState<"lista" | "form">("lista");
   const [filtro, setFiltro] = useState("");
   const [dados, setDados] = useState<DadosEmpresa>(VAZIO);
@@ -120,7 +123,7 @@ export function CadastroEmpresasDialog({ open, onOpenChange, empresas, abrirCom,
   useEffect(() => {
     if (!open) return;
     setFiltro("");
-    if (abrirCom && digitos(abrirCom.cnpj).length === 14) editar(abrirCom);
+    if (isAdmin && abrirCom && digitos(abrirCom.cnpj).length === 14) editar(abrirCom);
     else setModo("lista");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -218,7 +221,9 @@ export function CadastroEmpresasDialog({ open, onOpenChange, empresas, abrirCom,
         <DialogHeader>
           <DialogTitle className="text-brand-navy">Cadastro de empresas</DialogTitle>
           <DialogDescription>
-            Dados da Receita Federal e da SEFAZ, edital DBF e chave de acesso do Portal Único de cada importador.
+            {isAdmin
+              ? "Dados da Receita Federal e da SEFAZ, edital DBF e chave de acesso do Portal Único de cada importador."
+              : "Empresas que o administrador delegou a você. O cadastro e a chave de acesso são mantidos por ele."}
           </DialogDescription>
         </DialogHeader>
 
@@ -235,14 +240,18 @@ export function CadastroEmpresasDialog({ open, onOpenChange, empresas, abrirCom,
                   className="pl-9"
                 />
               </div>
-              <Button onClick={() => editar(VAZIO)}>
-                <Plus /> Nova empresa
-              </Button>
+              {isAdmin && (
+                <Button onClick={() => editar(VAZIO)}>
+                  <Plus /> Nova empresa
+                </Button>
+              )}
             </div>
 
             {listaFiltrada.length === 0 ? (
               <p className="rounded-xl bg-secondary/60 px-4 py-6 text-center text-sm text-muted-foreground">
-                {empresas.length === 0 ? "Nenhuma empresa cadastrada ainda." : "Nenhuma empresa encontrada."}
+                {empresas.length > 0 ? "Nenhuma empresa encontrada."
+                  : isAdmin ? "Nenhuma empresa cadastrada ainda."
+                  : "Nenhuma empresa delegada a você. Peça ao administrador."}
               </p>
             ) : (
               <ul className="divide-y rounded-xl border">
@@ -260,9 +269,11 @@ export function CadastroEmpresasDialog({ open, onOpenChange, empresas, abrirCom,
                       <Button size="sm" variant="outline" onClick={() => { onUsar(e); onOpenChange(false); }}>
                         <CheckCircle2 /> Usar na guia
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => editar(deCadastro(e))}>
-                        <Pencil /> Editar
-                      </Button>
+                      {isAdmin && (
+                        <Button size="sm" variant="ghost" onClick={() => editar(deCadastro(e))}>
+                          <Pencil /> Editar
+                        </Button>
+                      )}
                     </div>
                   </li>
                 ))}

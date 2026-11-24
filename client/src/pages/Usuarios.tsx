@@ -42,8 +42,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   ArrowLeft,
+  Building2,
   Plus,
   KeyRound,
+  Pencil,
+  Save,
   Trash2,
   Loader2,
   UserPlus,
@@ -51,6 +54,7 @@ import {
   ShieldOff,
   AlertCircle,
 } from "lucide-react";
+import { EmpresasDoUsuarioDialog } from "@/components/glme/EmpresasDoUsuarioDialog";
 import { toast } from "sonner";
 import { TRPCClientError } from "@trpc/client";
 
@@ -74,6 +78,15 @@ export default function Usuarios() {
   const [showCriar, setShowCriar] = useState(false);
   const [resetTarget, setResetTarget] = useState<UsuarioRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UsuarioRow | null>(null);
+  const [empresasTarget, setEmpresasTarget] = useState<UsuarioRow | null>(null);
+  // Edição dos dados do usuário (login, nome, e-mail, papel e status)
+  const [editTarget, setEditTarget] = useState<UsuarioRow | null>(null);
+  const [edicao, setEdicao] = useState({ username: "", name: "", email: "", role: "user" as "user" | "admin", active: true });
+
+  const abrirEdicao = (u: UsuarioRow) => {
+    setEditTarget(u);
+    setEdicao({ username: u.username ?? "", name: u.name ?? "", email: u.email ?? "", role: u.role, active: u.active });
+  };
 
   // ----- Criar usuário -----
   const [novo, setNovo] = useState({ username: "", name: "", email: "", password: "", role: "user" as "user" | "admin" });
@@ -103,6 +116,35 @@ export default function Usuarios() {
     onSuccess: () => utils.usuarios.listar.invalidate(),
     onError: err => toast.error(err instanceof TRPCClientError ? err.message : "Erro ao atualizar"),
   });
+
+  const salvarEdicaoMutation = trpc.usuarios.atualizar.useMutation({
+    onSuccess: () => {
+      toast.success("Usuário atualizado.");
+      setEditTarget(null);
+      utils.usuarios.listar.invalidate();
+    },
+    onError: err => toast.error(err instanceof TRPCClientError ? err.message : "Erro ao atualizar usuário"),
+  });
+
+  const salvarEdicao = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTarget) return;
+    const username = edicao.username.trim();
+    if (username.length < 3) {
+      toast.error("O login precisa de ao menos 3 caracteres.");
+      return;
+    }
+    const isSelf = currentUser?.id === editTarget.id;
+    salvarEdicaoMutation.mutate({
+      id: editTarget.id,
+      username: username === editTarget.username ? undefined : username,
+      name: edicao.name.trim(),
+      email: edicao.email.trim(),
+      // A própria conta não muda de papel nem é desativada: o servidor também recusa
+      role: isSelf ? undefined : edicao.role,
+      active: isSelf ? undefined : edicao.active,
+    });
+  };
 
   const excluirMutation = trpc.usuarios.excluir.useMutation({
     onSuccess: () => {
@@ -200,6 +242,12 @@ export default function Usuarios() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="sm" title="Editar dados" onClick={() => abrirEdicao(u)}>
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" title="Empresas do usuário" onClick={() => setEmpresasTarget(u)}>
+                              <Building2 className="w-4 h-4" />
+                            </Button>
                             <Button
                               variant="ghost"
                               size="sm"
@@ -306,6 +354,75 @@ export default function Usuarios() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog: editar dados do usuário */}
+      <Dialog open={!!editTarget} onOpenChange={o => !o && setEditTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar usuário</DialogTitle>
+            <DialogDescription>
+              Dados de acesso de <strong>{editTarget?.username}</strong>. A senha é trocada pelo botão da chave.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={salvarEdicao} className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="e-username">Login</Label>
+              <Input id="e-username" value={edicao.username} onChange={e => setEdicao({ ...edicao, username: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="e-name">Nome</Label>
+              <Input id="e-name" value={edicao.name} onChange={e => setEdicao({ ...edicao, name: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="e-email">E-mail</Label>
+              <Input id="e-email" type="email" value={edicao.email} onChange={e => setEdicao({ ...edicao, email: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Papel</Label>
+                <Select
+                  value={edicao.role}
+                  onValueChange={(v: "user" | "admin") => setEdicao({ ...edicao, role: v })}
+                  disabled={currentUser?.id === editTarget?.id}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="user">Usuário</SelectItem>
+                    <SelectItem value="admin">Administrador</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Status</Label>
+                <Select
+                  value={edicao.active ? "ativo" : "inativo"}
+                  onValueChange={(v) => setEdicao({ ...edicao, active: v === "ativo" })}
+                  disabled={currentUser?.id === editTarget?.id}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ativo">Ativo</SelectItem>
+                    <SelectItem value="inativo">Inativo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {currentUser?.id === editTarget?.id && (
+              <p className="text-xs text-muted-foreground">Papel e status da própria conta não podem ser alterados.</p>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditTarget(null)}>Cancelar</Button>
+              <Button type="submit" className="gap-2" disabled={salvarEdicaoMutation.isPending}>
+                {salvarEdicaoMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Salvar
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: empresas delegadas ao usuário */}
+      <EmpresasDoUsuarioDialog usuario={empresasTarget} onOpenChange={o => !o && setEmpresasTarget(null)} />
 
       {/* Dialog: redefinir senha */}
       <Dialog open={!!resetTarget} onOpenChange={o => !o && setResetTarget(null)}>

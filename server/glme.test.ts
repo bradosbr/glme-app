@@ -42,7 +42,7 @@ vi.mock("./db", () => ({
   vincularEmpresa: vi.fn().mockResolvedValue(undefined),
 }));
 
-function createAuthContext(): TrpcContext {
+function createAuthContext(role: "user" | "admin" = "user"): TrpcContext {
   return {
     user: {
       id: 1,
@@ -52,7 +52,7 @@ function createAuthContext(): TrpcContext {
       email: "test@test.com",
       name: "Test User",
       loginMethod: "local",
-      role: "user",
+      role,
       active: true,
       resetRequested: false,
       createdAt: new Date(),
@@ -68,7 +68,7 @@ function createAuthContext(): TrpcContext {
 
 describe("GLME - Importadores", () => {
   it("lista importadores cadastrados", async () => {
-    const ctx = createAuthContext();
+    const ctx = createAuthContext("admin");
     const caller = appRouter.createCaller(ctx);
     const result = await caller.importadores.listar();
     expect(Array.isArray(result)).toBe(true);
@@ -78,24 +78,25 @@ describe("GLME - Importadores", () => {
   });
 
   it("salva um importador com edital DBF", async () => {
-    const ctx = createAuthContext();
-    const caller = appRouter.createCaller(ctx);
+    const caller = appRouter.createCaller(createAuthContext("admin"));
     const result = await caller.importadores.salvar({
       cnpj: "12345678000190",
       razaoSocial: "Empresa Teste Ltda",
       editalDBF: "001/2024",
     });
     expect(result).toHaveProperty("cnpj");
-    // Quem cadastra fica vinculado à empresa ("minhas empresas")
-    const { vincularEmpresa } = await import("./db");
-    expect(vincularEmpresa).toHaveBeenCalledWith(1, 1);
   });
 
   it("exclui um importador por ID", async () => {
-    const ctx = createAuthContext();
-    const caller = appRouter.createCaller(ctx);
+    const caller = appRouter.createCaller(createAuthContext("admin"));
     const result = await caller.importadores.excluir({ id: 1 });
     expect(result).toEqual({ success: true });
+  });
+
+  it("usuário comum não cadastra nem exclui empresa", async () => {
+    const caller = appRouter.createCaller(createAuthContext());
+    await expect(caller.importadores.salvar({ cnpj: "12345678000190", razaoSocial: "Empresa Teste Ltda" })).rejects.toThrow();
+    await expect(caller.importadores.excluir({ id: 1 })).rejects.toThrow();
   });
 });
 
