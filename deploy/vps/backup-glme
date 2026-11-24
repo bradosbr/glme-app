@@ -1,0 +1,44 @@
+#!/bin/bash
+# Backup dos bancos glme*: de hora em hora, cifrado com age e copiado para o Google Drive.
+# Instalar em /usr/local/bin/backup-glme; agendado em /etc/cron.d/backup-glme.
+#
+# A chave pública fica em /etc/glme-backup/age.pub. A chave privada NÃO fica no VPS:
+# guarde-a fora dele, porque sem ela nenhum backup pode ser restaurado.
+#
+# Retenção: 7 dias de backups horários, 4 semanas (domingo, 03h) e 6 meses (dia 1, 03h).
+set -euo pipefail
+umask 077
+
+BASE=/opt/backups/glme
+CHAVE=/etc/glme-backup/age.pub
+REMOTO=gdrive:GLME-backups
+QUANDO=$(date +%Y-%m-%d_%H%M)
+HORA=$(date +%H); DIA_SEMANA=$(date +%u); DIA=$(date +%d)
+
+mkdir -p "$BASE/horario" "$BASE/semanal" "$BASE/mensal"
+
+for BANCO in $(docker exec infra-postgres-1 psql -U postgres -AtX -c "select datname from pg_database where datname in ('glme','glme_dev')"); do
+  ARQ="$BASE/horario/${BANCO}_$QUANDO.dump.age"
+  docker exec infra-postgres-1 pg_dump -U postgres -Fc "$BANCO" | age -R "$CHAVE" -o "$ARQ.tmp"
+  [ -s "$ARQ.tmp" ] || { echo "Backup vazio: $BANCO" >&2; exit 1; }
+  mv "$ARQ.tmp" "$ARQ"
+  if [ "$HORA" = 03 ] && [ "$DIA_SEMANA" = 7 ]; then cp "$ARQ" "$BASE/semanal/"; fi
+  if [ "$HORA" = 03 ] && [ "$DIA" = 01 ]; then cp "$ARQ" "$BASE/mensal/"; fi
+  echo "$(date '+%F %T') backup ok: $ARQ ($(du -h "$ARQ" | cut -f1))"
+done
+
+find "$BASE/horario" -name '*.age' -mtime +7 -delete
+find "$BASE/semanal" -name '*.age' -mtime +28 -delete
+find "$BASE/mensal" -name '*.age' -mtime +183 -delete
+
+if rclone listremotes 2>/dev/null | grep -q '^gdrive:$'; then
+  # "copy", e não "sync": apagar arquivos no VPS não apaga a cópia externa.
+  # Cria também as pastas ainda vazias, senão o "rclone delete" abaixo falha.
+  rclone copy --create-empty-src-dirs "$BASE" "$REMOTO"
+  rclone delete --min-age 8d "$REMOTO/horario"
+  rclone delete --min-age 29d "$REMOTO/semanal"
+  rclone delete --min-age 184d "$REMOTO/mensal"
+  echo "$(date '+%F %T') copia externa ok"
+else
+  echo "$(date '+%F %T') AVISO: Google Drive ainda nao configurado (remoto gdrive)" >&2
+fi

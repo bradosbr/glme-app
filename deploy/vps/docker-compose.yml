@@ -1,0 +1,15 @@
+# A imagem é gerada por deploy/vps/publicar.sh, que marca a versão ativa como "latest".
+name: glme
+
+services:
+  glme-app:
+    image: glme-app:latest
+    restart: unless-stopped
+    volumes:
+      # Lido pelo dotenv do app (evita interpolação de "$" pelo compose).
+      - ./.env:/app/.env:ro
+    networks: [web]
+
+networks:
+  web:
+    external: true
